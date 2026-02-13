@@ -1,0 +1,48 @@
+{
+  "expo": {
+    "name": "ControlAcceso",
+    "slug": "ControlAcceso",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.tunombre.controlacceso",
+      "infoPlist": {
+        "NFCReaderUsageDescription": "Necesitamos usar NFC para leer el carnet del alumno y verificar su acceso."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "edgeToEdgeEnabled": true,
+      "package": "com.tunombre.controlacceso",
+      "permissions": [
+        "android.permission.NFC"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "react-native-nfc-manager",
+        {
+          "nfcPermission": "Es necesario para escanear las tarjetas de los alumnos.",
+          "selectIdentifiers": [
+            "A0000002471001"
+          ]
+        }
+      ]
+    ]
+  }
+}
