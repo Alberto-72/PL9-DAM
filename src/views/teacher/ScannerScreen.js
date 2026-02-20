@@ -3,14 +3,12 @@ import { View, Text, TouchableOpacity, Image, StyleSheet, Alert } from 'react-na
 import { Ionicons } from '@expo/vector-icons';
 import NfcManager, { NfcTech } from 'react-native-nfc-manager';
 
-// Asegúrate de poner la IP de tu servidor Node
-const API_URL = 'http://10.102.8.22:3001/api/verificar-tarjeta'; 
+const API_URL = 'http://10.102.7.185:3001/api/verificar-tarjeta'; 
 
 export default function ScannerScreen({ route, navigation }) {
   const [alumno, setAlumno] = useState(null);
   const [escaneando, setEscaneando] = useState(false);
 
-  // Iniciar NFC al cargar la pantalla
   useEffect(() => {
     async function initNfc() {
       try {
@@ -27,11 +25,9 @@ export default function ScannerScreen({ route, navigation }) {
     };
   }, []);
 
-  // Escuchar si venimos de la Lista de Alumnos con un alumno seleccionado
   useEffect(() => {
     if (route.params?.studentToValidate) {
       procesarValidacion(route.params.studentToValidate);
-      // Limpiamos el parámetro para que no se re-ejecute
       navigation.setParams({ studentToValidate: undefined });
     }
   }, [route.params?.studentToValidate]);
@@ -83,14 +79,15 @@ export default function ScannerScreen({ route, navigation }) {
         NfcManager.requestTechnology(NfcTech.NfcA)
       );
       const tag = await NfcManager.getTag();
-      
+      console.log("AQUI SI LLEGO")
       const response = await fetch(API_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tarjetaId: tag.id })
       });
+      console.log(response)
       const data = await response.json();
-
+      
       if (data.success) {
         procesarValidacion({
           nombre: data.nombre,

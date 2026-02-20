@@ -1,4 +1,4 @@
-const NODE_SERVER_URL = 'http://10.102.7.219:3001';
+const NODE_SERVER_URL = 'http://10.102.7.185:3001';
 
 export const loginToOdoo = async (username, password) => {
   try {
