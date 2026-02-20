@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, FlatList, ActivityIndicator, StyleSheet } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { fetchOdooData } from '../../services/LogInService'; 
+import { fetchOdooData } from '../../services/LogInService'; // Ajusta la ruta si es necesario
 
 export default function ListScreen({ route }) {
+  // El tipo viene de los parámetros de navegación ('alumnado' o 'profesorado')
   const { type } = route.params; 
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);

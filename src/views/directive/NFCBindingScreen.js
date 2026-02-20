@@ -12,6 +12,7 @@ export default function NFCBindingScreen() {
       setLoading(true);
       try {
         const result = await fetchOdooData('gestion_entrada.alumno', ["uid", "name", "surname", "school_year"]);
+        // Filtramos a los que NO tienen UID vinculado
         setAlumnosSinNFC(result.filter(a => !a.uid));
       } catch (error) {
         console.error(error);
@@ -27,6 +28,7 @@ export default function NFCBindingScreen() {
       "Modo Vinculación",
       `Acerca una tarjeta NFC al lector del dispositivo móvil para vincularla a ${alumno.name} ${alumno.surname}.`
     );
+    // Aquí más adelante pondremos la lógica real de NfcManager
   };
 
   const renderItem = ({ item }) => (

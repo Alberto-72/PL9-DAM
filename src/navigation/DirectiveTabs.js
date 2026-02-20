@@ -12,7 +12,7 @@ export default function DirectiveTabs() {
   return (
     <Tab.Navigator 
       screenOptions={({ route }) => ({
-        headerShown: true, 
+        headerShown: true, // Mostramos la cabecera superior
         headerStyle: { backgroundColor: '#1D4ED8' },
         headerTintColor: '#fff',
         headerTitleStyle: { fontWeight: 'bold' },
@@ -30,6 +30,7 @@ export default function DirectiveTabs() {
     >
       <Tab.Screen name="Panel" component={DashboardScreen} options={{ title: 'Estadísticas' }}/>
       
+      {/* Usamos la misma pantalla para ambas listas, pasándole el tipo por parámetros */}
       <Tab.Screen 
         name="Alumnado" 
         component={ListScreen} 

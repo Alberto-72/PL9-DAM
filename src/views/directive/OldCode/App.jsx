@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { loginToOdoo } from '../../../services/odooService';
+import { loginToOdoo } from './services/LogInService';
 import Dashboard from './Dashboard'; 
 import { Loader2, Lock, User, BarChart3 } from 'lucide-react';
 

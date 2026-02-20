@@ -38,6 +38,7 @@ export default function DashboardScreen() {
   );
 }
 
+// Componente para las tarjetas pequeñas
 const StatCard = ({ title, value, trend, color = "blue" }) => (
   <View style={styles.statCard}>
     <Text style={styles.statTitle}>{title}</Text>

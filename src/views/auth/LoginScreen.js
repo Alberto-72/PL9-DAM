@@ -29,7 +29,7 @@ export default function LoginScreen({ route }) {
     }
 
     setLoading(true);
-    setError('')
+    setError('');
 
     try {
       
@@ -207,6 +207,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#0F172A',
     fontWeight: '500',
+    // Outline none para web para que no salga el borde azul feo por defecto del navegador
     ...(Platform.OS === 'web' ? { outlineStyle: 'none' } : {}),
   },
   errorContainer: {
