@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, Image, StyleSheet, Alert, Platform, TextI
 import { Ionicons } from '@expo/vector-icons';
 import NfcManager, { NfcTech } from 'react-native-nfc-manager';
 
-const NODE_SERVER_URL = 'http://10.102.7.185:3001'; 
+const NODE_SERVER_URL = 'http://10.102.8.22:3001'; 
 
 export default function ScannerScreen({ route, navigation }) {
   const [alumno, setAlumno] = useState(null);
@@ -32,7 +32,12 @@ export default function ScannerScreen({ route, navigation }) {
 
   useEffect(() => {
     if (route.params?.studentToValidate) {
-      procesarValidacion(route.params.studentToValidate);
+      const alumnoManual = route.params.studentToValidate;
+      procesarValidacion({
+        ...alumnoManual,
+        uid: alumnoManual.uid || 'SIN_NFC',
+        usr_type: 'alumno'
+      });
       navigation.setParams({ studentToValidate: undefined });
     }
   }, [route.params?.studentToValidate]);
@@ -47,17 +52,20 @@ export default function ScannerScreen({ route, navigation }) {
     return edad >= 18;
   };
 
-  const addRegister = (async (uid, usr_type, mensajeEstado) => {
+  const addRegister = async (uid, usr_type, mensajeEstado) => {
       try {
+        const now = new Date();
+        const dateTime = now.toISOString().replace('T', ' ').substring(0, 19);
+
         const response = await fetch(`${NODE_SERVER_URL}/api/register`, {
           method: 'POST',
           headers: { 
             'Content-Type': 'application/json' 
           },
-          body: JSON.stringify( {uid, usr_type, mensajeEstado} ),
+          body: JSON.stringify({ uid, usr_type, mensajeEstado, dateTime }),
         });
 
-        const data = await response.text();
+        const data = await response.json();
         if (data.success) {
           return data.usuario; 
         } else {
@@ -66,9 +74,9 @@ export default function ScannerScreen({ route, navigation }) {
         }
       } catch (error) {
         console.error("Error conectando con el servidor Node:", error);
-        return null
+        return null;
       }
-  })
+  };
 
   const procesarValidacion = (datosAlumno) => {
     const esAdulto = esMayorDeEdad(datosAlumno.fechaNacimiento);
@@ -87,9 +95,7 @@ export default function ScannerScreen({ route, navigation }) {
       return;
     }
 
-    // NUEVO: Separamos la lógica si es PC (Web) o Móvil
     if (Platform.OS === 'web') {
-      // Usamos el 'confirm' nativo del navegador porque Alert.alert no soporta botones en PC
       const confirmado = window.confirm(`Control de Menores\n\nEl alumno ${datosAlumno.nombre} es menor y NO tiene transporte.\n\n¿Va acompañado de un adulto?\n(Aceptar = SÍ / Cancelar = NO)`);
       
       if (confirmado) {
@@ -102,7 +108,6 @@ export default function ScannerScreen({ route, navigation }) {
         addRegister(datosAlumno.uid, datosAlumno.usr_type, newStudentState.mensajeEstado);
       }
     } else {
-      // En móvil seguimos usando la alerta bonita de React Native
       Alert.alert(
         "Control de Menores",
         `El alumno ${datosAlumno.nombre} es menor y NO tiene transporte.\n\n¿Va acompañado de un adulto?`,
@@ -159,8 +164,8 @@ export default function ScannerScreen({ route, navigation }) {
           foto: data.foto || null,
           fechaNacimiento: data.fechaNacimiento,
           tieneTransporte: data.tieneTransporte,
-          uid: hexInvertido, // ¡CORREGIDO! Pasamos el UID para que se guarde en Odoo
-          usr_type: 'alumno' // ¡CORREGIDO!
+          uid: hexInvertido, 
+          usr_type: 'alumno' 
         });
       } else {
         setAlumno({ nombre: 'Desconocido', curso: 'UID: ' + hexInvertido, autorizado: false, estado: 'error', mensajeEstado: 'NO REGISTRADO' });

@@ -237,8 +237,8 @@ app.post('/api/login', (req, res) => {
 });
 
 app.post('/api/register', (req, res) => {
-    const {uid, usr_type, mensajeEstado} = req.body
-    console.log(uid, usr_type, mensajeEstado)
+    const {uid, usr_type, mensajeEstado, dateTime} = req.body
+    console.log(uid, usr_type, mensajeEstado, dateTime)
     const odoo = new Odoo(odooConfig)
 
     odoo.connect((err) => {
@@ -256,7 +256,8 @@ app.post('/api/register', (req, res) => {
             [[{
                 'uid': uid,
                 'usr_type': usr_type,
-                'reg_type': mensajeEstado
+                'reg_type': mensajeEstado,
+                'dateTime': dateTime
                 }]],
             (err, result) => {
                 if (err){
