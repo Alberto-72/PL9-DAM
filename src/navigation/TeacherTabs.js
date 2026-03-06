@@ -8,13 +8,9 @@ import SettingsScreen from '../views/teacher/SettingsScreen';
 
 const Tab = createBottomTabNavigator();
 
-<<<<<<< Updated upstream
-export default function TeacherTabs() {
-=======
 export default function TeacherTabs({ route }) {
   const { username } = route.params || {};   // solo username (sin función)
 
->>>>>>> Stashed changes
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -35,9 +31,6 @@ export default function TeacherTabs({ route }) {
     >
       <Tab.Screen name="Escáner" component={ScannerScreen} options={{ title: 'Control Guardia' }} />
       <Tab.Screen name="Alumnos" component={StudentsListScreen} options={{ title: 'Búsqueda Manual' }} />
-<<<<<<< Updated upstream
-      <Tab.Screen name="Ajustes" component={SettingsScreen} options={{ title: 'Mi Perfil' }} />
-=======
       <Tab.Screen 
         name="Ajustes" 
         component={SettingsScreen} 
@@ -45,7 +38,6 @@ export default function TeacherTabs({ route }) {
         initialParams={{ username }} 
         key={`ajustes-${username || 'no-user'}`}
       />
->>>>>>> Stashed changes
     </Tab.Navigator>
   );
 }

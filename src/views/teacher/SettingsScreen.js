@@ -1,23 +1,12 @@
-<<<<<<< Updated upstream
-import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-
-export default function SettingsScreen() {
-  return (
-    <View style={styles.container}>
-      <Ionicons name="build-outline" size={60} color="#9CA3AF" />
-      <Text style={styles.text}>Ajustes de Perfil</Text>
-      <Text style={styles.subtext}>Próximamente</Text>
-    </View>
-=======
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../../context/AuthContext';   // nuevo
 
-const NODE_SERVER_URL = 'http://192.168.1.10:3001';
+// const NODE_SERVER_URL = 'http://192.168.1.10:3001';
+// const NODE_SERVER_URL = 'http://10.102.7.192:3001';
+const NODE_SERVER_URL = 'http://10.102.8.22:3001';
 
 export default function SettingsScreen() {
   const { username, onLogout } = useAuth();   // ahora viene del contexto global
@@ -233,16 +222,10 @@ export default function SettingsScreen() {
 
       </ScrollView>
     </KeyboardAvoidingView>
->>>>>>> Stashed changes
   );
 }
 
 const styles = StyleSheet.create({
-<<<<<<< Updated upstream
-  container: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F3F4F6' },
-  text: { fontSize: 20, fontWeight: 'bold', color: '#1F2937', marginTop: 16 },
-  subtext: { fontSize: 14, color: '#6B7280', marginTop: 8 }
-=======
   container: { flex: 1, backgroundColor: '#F8FAFC' },
   centered: { justifyContent: 'center', alignItems: 'center' },
   loadingText: { marginTop: 12, color: '#64748B', fontWeight: 'bold' },
@@ -276,5 +259,4 @@ const styles = StyleSheet.create({
   buttonText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
   logoutButton: { flexDirection: 'row', width: '100%', backgroundColor: '#EF4444', alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: 12, shadowColor: '#EF4444', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 6, elevation: 4 },
   logoutText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
->>>>>>> Stashed changes
 });

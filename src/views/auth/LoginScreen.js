@@ -29,15 +29,6 @@ export default function LoginScreen({ route }) {
     }
 
     setLoading(true);
-<<<<<<< Updated upstream
-    setError('')
-
-    try {
-      
-      const userData = await loginToOdoo(username, password);
-      if (userData) {
-        onLogin(userData.token || 'fake-token', userData.role || 'directiva');
-=======
     setError('');
 
     try {
@@ -54,7 +45,6 @@ export default function LoginScreen({ route }) {
 
         // Pasamos el token, el rol y el USERNAME (ya no el ID)
         onLogin(userData.token || 'fake-token', userData.role || 'directiva', userData.username);
->>>>>>> Stashed changes
       } else {
         setError('Usuario o contraseña no válidos');
       }
@@ -65,10 +55,7 @@ export default function LoginScreen({ route }) {
       setLoading(false);
     }
   };
-<<<<<<< Updated upstream
-=======
 
->>>>>>> Stashed changes
   const Wrapper = Platform.OS === 'web' ? View : TouchableWithoutFeedback;
   const wrapperProps = Platform.OS === 'web' ? {} : { onPress: Keyboard.dismiss };
 
@@ -163,10 +150,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
-<<<<<<< Updated upstream
-    
-=======
->>>>>>> Stashed changes
   },
   card: {
     width: '100%',

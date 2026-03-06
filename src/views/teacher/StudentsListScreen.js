@@ -2,7 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, FlatList, TouchableOpacity, ActivityIndicator, Image, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-const ALUMNOS_URL = 'http://10.102.7.185:3001/api/alumnos';
+// const ALUMNOS_URL = 'http://10.102.7.192/api/alumnos';
+// const ALUMNOS_URL = 'http://10.102.7.192:3001/api/alumnos';
+const ALUMNOS_URL = 'http://10.102.8.22:3001/api/alumnos';
 
 export default function StudentsListScreen({ navigation }) {
   const [listaAlumnos, setListaAlumnos] = useState([]);

@@ -7,6 +7,7 @@ import NfcManager, { NfcTech } from 'react-native-nfc-manager';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 //Base server URL
+// const BASE_URL = 'http://10.102.7.192:3001';
 const BASE_URL = 'http://10.102.8.22:3001';
 //NFC verification endpoint
 const API_URL = `${BASE_URL}/api/verificar-tarjeta`;
@@ -103,7 +104,6 @@ function MainScreen() {
   const procesarValidacion = (datosAlumno) => {
     const esAdulto = esMayorDeEdad(datosAlumno.fechaNacimiento);
     
-<<<<<<< pablo
     //Calcular minutos actuales para las comparaciones de hora
     const now = new Date();
     const hora = now.getHours();
@@ -119,28 +119,12 @@ function MainScreen() {
     const esRecreo = totalMinutos >= inicioRecreo && totalMinutos <= finRecreo;
     const esHoraTransporte = totalMinutos >= horaTransporte;
 
-<<<<<<< Updated upstream
-    //Si está fuera del horario restringido (antes de las 08:00 o después de las 14:00), se acepta la salida a cualquiera
-    if (fueraDeHorario) {
-=======
-    //Case 1: Adult (Always authorized - Green)
-    if (esAdulto) {
->>>>>>> main
-=======
     //Si está antes de las 08:00
     if (totalMinutos < inicioJornada) {
->>>>>>> Stashed changes
       setAlumno({
         ...datosAlumno,
         autorizado: true,
         estado: 'exito', //green
-<<<<<<< Updated upstream
-<<<<<<< pablo
-        mensajeEstado: 'anticipada'
-=======
-        mensajeEstado: 'AUTORIZADO'
->>>>>>> main
-=======
         mensajeEstado: 'salida_antes_8'
       });
       setTabActiva(0);
@@ -154,13 +138,11 @@ function MainScreen() {
         autorizado: true,
         estado: 'exito', //green
         mensajeEstado: 'autorizado'
->>>>>>> Stashed changes
       });
       setTabActiva(0);
       return;
     }
 
-<<<<<<< pablo
     //Si es mayor de edad:
     if (esAdulto) {
       if (esRecreo) {
@@ -185,32 +167,14 @@ function MainScreen() {
           mensajeEstado: 'anticipada'
         });
       }
-=======
-    //Case 2: Minor with transport (Authorized - Yellow)
-    if (datosAlumno.tieneTransporte) {
-      setAlumno({
-        ...datosAlumno,
-        autorizado: true,
-        estado: 'precaucion', //yellow
-        mensajeEstado: 'Menor de edad con permiso de transporte'
-      });
->>>>>>> main
       setTabActiva(0);
       return;
     }
 
-<<<<<<< pablo
     //Si es menor: a la hora del recreo o a cualquier otra hora dentro del horario (08:00 - 14:00), no está autorizado salir salvo si va acompañado por un adulto
     Alert.alert(
       "Control de Menores",
       `El alumno ${datosAlumno.nombre} es menor de edad.\n\n¿Va acompañado de un adulto?`,
-=======
-    //Case 3: Minor without transport (Needs popup check)
-    //We show the alert first, then set the state based on the answer
-    Alert.alert(
-      "Control de Menores",
-      `El alumno ${datosAlumno.nombre} es menor y NO tiene transporte.\n\n¿Va acompañado de un adulto?`,
->>>>>>> main
       [
         {
           text: "NO - Denegar",
@@ -220,15 +184,7 @@ function MainScreen() {
               ...datosAlumno,
               autorizado: false,
               estado: 'error', //red
-<<<<<<< Updated upstream
-<<<<<<< pablo
-              mensajeEstado: 'error'
-=======
-              mensajeEstado: 'Salida denegada'
->>>>>>> main
-=======
               mensajeEstado: 'no_autorizado'
->>>>>>> Stashed changes
             });
             setTabActiva(0);
           }
@@ -240,16 +196,8 @@ function MainScreen() {
               ...datosAlumno,
               autorizado: true,
               estado: 'precaucion', //yellow
-<<<<<<< Updated upstream
-<<<<<<< pablo
-              mensajeEstado: esRecreo ? 'recreo' : 'anticipada'
-=======
-              mensajeEstado: 'Autorizado por acompañamiento de un adulto'
->>>>>>> main
-=======
               // Corregido: ya no marca 'recreo', siempre es una salida autorizada anticipada
               mensajeEstado: 'salida_autorizada_anticipada'
->>>>>>> Stashed changes
             });
             setTabActiva(0);
           }

@@ -13,55 +13,15 @@ app.use(express.json());
 
 // Odoo connection settings
 const odooConfig = {
-<<<<<<< Updated upstream
-    url: 'http://10.102.7.237',
-    port: 8069,
-    db: 'ControlAcceso',
-    username: 'albertoroaf@gmail.com',
-    password: 'AlberPabKil123'
-};
-
-// Mapping of school_year selection keys to full course names
-const CURSOS = {
-    '1ESO': '1 Educacion Secundaria Obligatoria',
-    '2ESO': '2 Educacion Secundaria Obligatoria',
-    '3ESO': '3 Educacion Secundaria Obligatoria',
-    '3ESODIV': '3 ESO - Diversificacion',
-    '4ESO': '4 Educacion Secundaria Obligatoria',
-    '4ESODIV': '4 ESO - Diversificacion',
-    '1BACH_CIEN': '1 Bachillerato Ciencias y Tecnologia',
-    '2BACH_CIEN': '2 Bachillerato Ciencias y Tecnologia',
-    '1BACH_HCS': '1 Bachillerato Humanidades y C. Sociales',
-    '2BACH_HCS': '2 Bachillerato Humanidades y C. Sociales',
-    '1CFGB_AGR': '1 CFGB Aprovechamientos Forestales',
-    '2CFGB_AGR': '2 CFGB Agrojardineria y Comp. Florales',
-    '1CFGM_SMR': '1 CFGM Sistemas Microinformaticos y Redes',
-    '2CFGM_SMR': '2 CFGM Sistemas Microinformaticos y Redes',
-    '1CFGM_ACMN': '1 CFGM Aprovechamiento y Cons. Medio Natural',
-    '2CFGM_ACMN': '2 CFGM Aprovechamiento y Cons. Medio Natural',
-    '1DAM': '1 CFGS Desarrollo de Aplicaciones Multiplataforma',
-    '2DAM': '2 CFGS Desarrollo de Aplicaciones Multiplataforma',
-    '1CFGS_GFMN': '1 CFGS Gestion Forestal y del Medio Natural',
-    '2CFGS_GFMN': '2 CFGS Gestion Forestal y del Medio Natural'
-};
-
-// Helper function to get the full course name from the selection key
-function getCursoCompleto(key) {
-    if (!key || key === false) return null;
-    return CURSOS[key] || key;
-}
-
-// Test route to check if the server is running
-=======
-    url: 'http://192.168.1.10',
-    port: 8070,
+    url: 'http://10.102.8.22',
+    port: 8072,
     db: 'admin',
     username: 'admin',
     password: 'admin'
 };
 
 // const odooConfig = {
-//     url: 'http://10.102.7.237',
+//     url: 'http://10.102.7.192',
 //     port: 8069,
 //     db: 'ControlAcceso',
 //     username: 'albertoroaf@gmail.com',
@@ -99,24 +59,15 @@ function getCursoCompleto(key) {
 }
 
 // Test route
->>>>>>> Stashed changes
 app.get('/', (req, res) => {
     res.send('Servidor Odoo funcionando correctamente.');
 });
 
-<<<<<<< Updated upstream
-// Main route: receives the NFC card UID and queries Odoo
-=======
 // Main route: NFC
->>>>>>> Stashed changes
 app.post('/api/verificar-tarjeta', (req, res) => {
     const { tarjetaId } = req.body;
     console.log(`\nUID Recibido: ${tarjetaId} -> Consultando Odoo...`);
 
-<<<<<<< Updated upstream
-    // Create Odoo connection instance
-=======
->>>>>>> Stashed changes
     const odoo = new Odoo(odooConfig);
 
     odoo.connect((err) => {
@@ -125,10 +76,6 @@ app.post('/api/verificar-tarjeta', (req, res) => {
             return res.status(500).json({ success: false, error: 'Fallo conexion Odoo' });
         }
 
-<<<<<<< Updated upstream
-        // Search in gestion_entrada.alumno model by UID
-=======
->>>>>>> Stashed changes
         odoo.execute_kw(
             'gestion_entrada.alumno',
             'search_read',
@@ -144,34 +91,15 @@ app.post('/api/verificar-tarjeta', (req, res) => {
                     return res.status(500).json({ success: false, error: err });
                 }
 
-<<<<<<< Updated upstream
-                // If student is found, return their full data
-=======
->>>>>>> Stashed changes
                 if (result && result.length > 0) {
                     const alumno = result[0];
                     const nombreCompleto = `${alumno.name} ${alumno.surname}`;
 
-<<<<<<< Updated upstream
-                    // Get short key and full course name
-                    const cursoCorto = (alumno.school_year && alumno.school_year !== false)
-                        ? alumno.school_year
-                        : null;
-                    const cursoLargo = getCursoCompleto(alumno.school_year);
-
-                    // Student found log
-                    console.log(`ALUMNO ENCONTRADO: ${nombreCompleto}`);
-                    console.log(`Foto: ${alumno.photo ? 'foto encontrada' : 'sin foto'}`);
-                    console.log(`Curso: ${cursoCorto} -> ${cursoLargo}`);
-
-                    // JSON response
-=======
                     const cursoCorto = (alumno.school_year && alumno.school_year !== false) ? alumno.school_year : null;
                     const cursoLargo = getCursoCompleto(alumno.school_year);
 
                     console.log(`ALUMNO ENCONTRADO: ${nombreCompleto}`);
 
->>>>>>> Stashed changes
                     return res.json({
                         success: true,
                         nombre: nombreCompleto,
@@ -182,10 +110,6 @@ app.post('/api/verificar-tarjeta', (req, res) => {
                         tieneTransporte: alumno.can_bus || false
                     });
                 } else {
-<<<<<<< Updated upstream
-                    // UID not found in database
-=======
->>>>>>> Stashed changes
                     console.log(`UID ${tarjetaId} no existe en la base de datos.`);
                     return res.json({
                         success: false,
@@ -196,18 +120,10 @@ app.post('/api/verificar-tarjeta', (req, res) => {
     });
 });
 
-<<<<<<< Updated upstream
-// Route to get all registered students for the student list tab
-app.get('/api/alumnos', (req, res) => {
-    console.log('\nSolicitando lista de alumnos...');
-
-    // Create Odoo connection instance
-=======
 // Get all students
 app.get('/api/alumnos', (req, res) => {
     console.log('\nSolicitando lista de alumnos...');
 
->>>>>>> Stashed changes
     const odoo = new Odoo(odooConfig);
 
     odoo.connect((err) => {
@@ -216,10 +132,6 @@ app.get('/api/alumnos', (req, res) => {
             return res.status(500).json({ success: false, error: 'Fallo conexion Odoo' });
         }
 
-<<<<<<< Updated upstream
-        // Fetch all students with extended fields
-=======
->>>>>>> Stashed changes
         odoo.execute_kw(
             'gestion_entrada.alumno',
             'search_read',
@@ -234,16 +146,8 @@ app.get('/api/alumnos', (req, res) => {
                     return res.status(500).json({ success: false, error: err });
                 }
 
-<<<<<<< Updated upstream
-                // Map results to clean format for the app
-                const alumnos = (result || []).map(alumno => {
-                    const cursoCorto = (alumno.school_year && alumno.school_year !== false)
-                        ? alumno.school_year
-                        : null;
-=======
                 const alumnos = (result || []).map(alumno => {
                     const cursoCorto = (alumno.school_year && alumno.school_year !== false) ? alumno.school_year : null;
->>>>>>> Stashed changes
 
                     return {
                         uid: alumno.uid,
@@ -284,11 +188,7 @@ app.post('/api/login', (req, res) => {
             'gestion_entrada.profesor',
             'search_read',
             [
-<<<<<<< Updated upstream
-                [[['username', '=', username], ['password', '=', password]]],
-=======
                 [[['username', '=', username], ['user_pass', '=', password]]],
->>>>>>> Stashed changes
                 {
                     fields: ['name', 'surname', 'email', 'username', 'is_management'],
                     limit: 1
@@ -302,11 +202,7 @@ app.post('/api/login', (req, res) => {
 
                 if (result && result.length > 0) {
                     const userData = result[0];
-<<<<<<< Updated upstream
-                    console.log(`LOGIN EXITOSO: ${userData.name} ${userData.surname}`);
-=======
                     console.log(`LOGIN EXITOSO: ${userData.name} ${userData.surname} (User: ${userData.username})`);
->>>>>>> Stashed changes
 
                     return res.json({
                         success: true,
@@ -367,12 +263,6 @@ app.post('/api/register', (req, res) => {
     })
 })
 
-<<<<<<< Updated upstream
-// Start server on port 3001
-const PORT = 3001;
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Servidor listo en http://localhost:${PORT}`);
-=======
 // CHANGE PASSWORD - RAW SQL DIRECTO (la única forma que evita todos los errores de firma XML-RPC)
 app.post('/api/change-password', (req, res) => {
     const { username, newPassword } = req.body;
@@ -481,5 +371,4 @@ app.get('/api/user/:username', (req, res) => {
 const PORT = 3001;
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server ready at http://localhost:${PORT}`);
->>>>>>> Stashed changes
 });
