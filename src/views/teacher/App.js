@@ -7,8 +7,12 @@ import NfcManager, { NfcTech } from 'react-native-nfc-manager';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 //Base server URL
+<<<<<<< Updated upstream
 // const BASE_URL = 'http://10.102.7.192:3001';
 const BASE_URL = 'http://10.102.8.22:3001';
+=======
+const BASE_URL = 'http://10.102.6.253:3001';
+>>>>>>> Stashed changes
 //NFC verification endpoint
 const API_URL = `${BASE_URL}/api/verificar-tarjeta`;
 //Student list endpoint

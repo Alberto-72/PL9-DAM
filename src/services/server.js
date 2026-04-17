@@ -13,11 +13,19 @@ app.use(express.json());
 
 // Odoo connection settings
 const odooConfig = {
+<<<<<<< Updated upstream
     url: 'http://10.102.8.22',
     port: 8072,
     db: 'admin',
     username: 'admin',
     password: 'admin'
+=======
+    url: 'http://10.102.7.16',
+    port: 8069,
+    db: 'ControlAcceso',
+    username: 'albertoroaf@gmail.com',
+    password: 'AlberPabKil123'
+>>>>>>> Stashed changes
 };
 
 // const odooConfig = {
@@ -173,6 +181,7 @@ app.get('/api/alumnos', (req, res) => {
 });
 
 app.post('/api/login', (req, res) => {
+    console.log("LOGIN")
     const { username, password } = req.body;
     console.log(`\nIntento de login para usuario: ${username}`);
 

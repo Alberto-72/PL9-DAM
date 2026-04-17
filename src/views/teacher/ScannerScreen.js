@@ -3,9 +3,13 @@ import { View, Text, TouchableOpacity, Image, StyleSheet, Alert, Platform, TextI
 import { Ionicons } from '@expo/vector-icons';
 import NfcManager, { NfcTech } from 'react-native-nfc-manager';
 
+<<<<<<< Updated upstream
 // const NODE_SERVER_URL = 'http://192.168.1.10:3001'; 
 // const NODE_SERVER_URL = 'http://10.102.7.192:3001';
 const NODE_SERVER_URL = 'http://10.102.8.22:3001';
+=======
+const NODE_SERVER_URL = 'http://10.102.6.253:3001'; 
+>>>>>>> Stashed changes
 
 export default function ScannerScreen({ route, navigation }) {
   const [alumno, setAlumno] = useState(null);
