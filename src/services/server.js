@@ -228,20 +228,28 @@ app.post('/api/login', (req, res) => {
     });
 });
 
+// Crear registro de entrada/salida
 app.post('/api/register', (req, res) => {
-    const {uid, usr_type, mensajeEstado, dateTime} = req.body
-    console.log(uid, usr_type, mensajeEstado, dateTime)
-    const odoo = new Odoo(odooConfig)
+    const { uid, usr_type, mensajeEstado, dateTime } = req.body;
+    console.log(uid, usr_type, mensajeEstado, dateTime);
+
+    // Validación de datos ANTES de conectar a Odoo (más eficiente)
+    if (!uid || !usr_type || !mensajeEstado) {
+        console.log("ERROR en los datos pasados");
+        return res.status(400).json({ 
+            success: false, 
+            message: "Faltan datos obligatorios (uid, usr_type o mensajeEstado)" 
+        });
+    }
+
+    const odoo = new Odoo(odooConfig);
 
     odoo.connect((err) => {
         if (err) {
-            console.error('Error de conexión con Odoo en Login:', err);
+            console.error('Error de conexión con Odoo en Register:', err);
             return res.status(500).json({ success: false, message: 'Fallo conexión Odoo' });
         }
-        if (!uid || !usr_type || !mensajeEstado){
-            console.log("ERROR en los datos pasados")
-            return
-        }
+
         odoo.execute_kw(
             'gestion_entrada.registro',
             'create',
@@ -250,18 +258,25 @@ app.post('/api/register', (req, res) => {
                 'usr_type': usr_type,
                 'reg_type': mensajeEstado,
                 'dateTime': dateTime
-                }]],
+            }]],
             (err, result) => {
-                if (err){
-                    console.error("Error:", err);
-                    return
-                } 
+                if (err) {
+                    console.error("Error creando registro:", err);
+                    return res.status(500).json({ 
+                        success: false, 
+                        message: "Error al crear el registro en Odoo" 
+                    });
+                }
                 console.log("Registro creado con el ID:", result);
-                return 
+                return res.json({ 
+                    success: true, 
+                    id: result,
+                    message: "Registro creado correctamente" 
+                });
             }
-        )
-    })
-})
+        );
+    });
+});
 
 // CHANGE PASSWORD - RAW SQL DIRECTO (la única forma que evita todos los errores de firma XML-RPC)
 app.post('/api/change-password', (req, res) => {
