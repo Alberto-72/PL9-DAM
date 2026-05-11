@@ -39,6 +39,25 @@ export default function StudentsListScreen({ navigation, route }) {
     });
   }, [navigation, route.params]);
 
+  //Si entramos desde directiva, mostramos un boton "Salir de Guardia" en la cabecera para volver al panel
+  useEffect(() => {
+    const esDesdeDirectiva = route.params?.origin === 'directiva';
+
+    navigation.setOptions({
+      headerLeft: () => esDesdeDirectiva ? (
+        <TouchableOpacity
+          style={styles.btnSalir}
+          onPress={() => navigation.navigate('Panel')}
+        >
+          <Feather name="arrow-left" size={18} color="white" />
+          <Text style={styles.txtSalir}> Salir de Guardia</Text>
+        </TouchableOpacity>
+      ) : null,
+    });
+  }, [navigation, route.params]);
+
+  //Carga de alumnos desde el backend. El backend devuelve datos crudos de Odoo,
+  //asi que aqui los formateamos para que la UI pueda mostrarlos directamente.
   useEffect(() => {
     const cargarAlumnos = async () => {
       try {
@@ -68,6 +87,7 @@ export default function StudentsListScreen({ navigation, route }) {
     a.nombreCompleto.toLowerCase().includes(busqueda.toLowerCase())
   );
 
+  //Al seleccionar un alumno, lo pasamos al scanner con los campos que este espera
   const seleccionarDeLista = (item) => {
     navigation.navigate('Escáner', { 
       studentToValidate: {

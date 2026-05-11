@@ -1,4 +1,4 @@
-// Express server connecting the mobile app with Odoo
+//Servidor Express que conecta la app mvil y la app web con Odoo
 const express = require('express');
 const cors = require('cors');
 const Odoo = require('odoo-xmlrpc');
@@ -11,6 +11,7 @@ app.use(cors({
 }));
 app.use(express.json());
 
+//Configuracion de conexion a Odoo
 const odooConfig = {
     url: 'http://10.102.7.16',
     port: 8069,
@@ -19,42 +20,45 @@ const odooConfig = {
     password: 'AlberPabKil123'
 };
 
-// Mapping of school_year selection keys to full course names
+//Mapeo de claves school_year (cortas) a nombre completo del curso.
+//Se usa solo en /api/verificar-tarjeta (NFC), donde el frontend muestra el curso largo directamente.
+//En /api/alumnos NO se transforma, se devuelven los datos crudos para que el frontend decida como mostrarlos.
 const CURSOS = [
-    ['1ESO', '1º Educación Secundaria Obligatoria'],
-    ['2ESO', '2º Educación Secundaria Obligatoria'],
-    ['3ESO', '3º Educación Secundaria Obligatoria'],
-    ['3ESODIV', '3º ESO - Diversificación'],
-    ['4ESO', '4º Educación Secundaria Obligatoria'],
-    ['4ESODIV', '4º ESO - Diversificación'],
-    ['1BACH_CIEN', '1º Bachillerato Ciencias y Tecnología'],
-    ['2BACH_CIEN', '2º Bachillerato Ciencias y Tecnología'],
-    ['1BACH_HCS', '1º Bachillerato Humanidades y C. Sociales'],
-    ['2BACH_HCS', '2º Bachillerato Humanidades y C. Sociales'],
-    ['1CFGB_AGR', '1º CFGB Aprovechamientos Forestales'],
-    ['2CFGB_AGR', '2º CFGB Agrojardinería y Comp. Florales'],
-    ['1CFGM_SMR', '1º CFGM Sistemas Microinformáticos y Redes'],
-    ['2CFGM_SMR', '2º CFGM Sistemas Microinformáticos y Redes'],
-    ['1CFGM_ACMN', '1º CFGM Aprovechamiento y Cons. Medio Natural'],
-    ['2CFGM_ACMN', '2º CFGM Aprovechamiento y Cons. Medio Natural'],
-    ['1DAM', '1º CFGS Desarrollo de Aplicaciones Multiplataforma'],
-    ['2DAM', '2º CFGS Desarrollo de Aplicaciones Multiplataforma'],
-    ['1CFGS_GFMN', '1º CFGS Gestión Forestal y del Medio Natural'],
-    ['2CFGS_GFMN', '2º CFGS Gestión Forestal y del Medio Natural']
+    ['1ESO', '1 Educacion Secundaria Obligatoria'],
+    ['2ESO', '2 Educacion Secundaria Obligatoria'],
+    ['3ESO', '3 Educacion Secundaria Obligatoria'],
+    ['3ESODIV', '3 ESO - Diversificacion'],
+    ['4ESO', '4 Educacion Secundaria Obligatoria'],
+    ['4ESODIV', '4 ESO - Diversificacion'],
+    ['1BACH_CIEN', '1 Bachillerato Ciencias y Tecnologia'],
+    ['2BACH_CIEN', '2 Bachillerato Ciencias y Tecnologia'],
+    ['1BACH_HCS', '1 Bachillerato Humanidades y C. Sociales'],
+    ['2BACH_HCS', '2 Bachillerato Humanidades y C. Sociales'],
+    ['1CFGB_AGR', '1 CFGB Aprovechamientos Forestales'],
+    ['2CFGB_AGR', '2 CFGB Agrojardineria y Comp. Florales'],
+    ['1CFGM_SMR', '1 CFGM Sistemas Microinformaticos y Redes'],
+    ['2CFGM_SMR', '2 CFGM Sistemas Microinformaticos y Redes'],
+    ['1CFGM_ACMN', '1 CFGM Aprovechamiento y Cons. Medio Natural'],
+    ['2CFGM_ACMN', '2 CFGM Aprovechamiento y Cons. Medio Natural'],
+    ['1DAM', '1 CFGS Desarrollo de Aplicaciones Multiplataforma'],
+    ['2DAM', '2 CFGS Desarrollo de Aplicaciones Multiplataforma'],
+    ['1CFGS_GFMN', '1 CFGS Gestion Forestal y del Medio Natural'],
+    ['2CFGS_GFMN', '2 CFGS Gestion Forestal y del Medio Natural']
 ];
 
+//Funcion auxiliar para traducir codigo corto de curso a nombre completo
 function getCursoCompleto(key) {
     if (!key || key === false) return null;
     const found = CURSOS.find(([short]) => short === key);
     return found ? found[1] : key;
 }
 
-// Test route
+//Ruta de test, util para comprobar desde el navegador que el servidor responde
 app.get('/', (req, res) => {
     res.send('Servidor Odoo funcionando correctamente.');
 });
 
-// Main route: NFC
+//Verificar tarjeta NFC: busca un alumno por UID y devuelve sus datos para mostrar en el scanner
 app.post('/api/verificar-tarjeta', (req, res) => {
     const { tarjetaId } = req.body;
     console.log(`\nUID Recibido: ${tarjetaId} -> Consultando Odoo...`);
@@ -86,6 +90,8 @@ app.post('/api/verificar-tarjeta', (req, res) => {
                     const alumno = result[0];
                     const nombreCompleto = `${alumno.name} ${alumno.surname}`;
 
+                    //Aqui SI transformamos los campos porque el scanner los muestra directamente,
+                    //no tiene un sistema de mapeo propio como StudentsListScreen
                     const cursoCorto = (alumno.school_year && alumno.school_year !== false) ? alumno.school_year : null;
                     const cursoLargo = getCursoCompleto(alumno.school_year);
 
@@ -159,6 +165,43 @@ app.get('/api/profesores', (req, res) => {
     });
 });
 
+//Listado de profesores: igual que alumnos, devuelve datos crudos. Endpoint integrado del server de Kilian.
+app.get('/api/profesores', (req, res) => {
+    console.log('\nSolicitando lista de profesores...');
+
+    const odoo = new Odoo(odooConfig);
+
+    odoo.connect((err) => {
+        if (err) {
+            console.error('Error de conexion con Odoo:', err);
+            return res.status(500).json({ success: false, error: 'Fallo conexion Odoo' });
+        }
+
+        odoo.execute_kw(
+            'gestion_entrada.profesor',
+            'search_read',
+            [
+                [[]],
+                {
+                    fields: ['uid', 'name', 'surname', 'email', 'photo']
+                }
+            ], (err, result) => {
+                if (err) {
+                    console.error('Error obteniendo profesores:', err);
+                    return res.status(500).json({ success: false, error: err });
+                }
+
+                console.log(`Total profesores encontrados: ${(result || []).length}`);
+
+                return res.json({
+                    success: true,
+                    profesores: result || []
+                });
+            });
+    });
+});
+
+//Login: valida usuario y contrasea contra Odoo y devuelve los datos del usuario
 app.post('/api/login', (req, res) => {
     const { username, password } = req.body;
     console.log(`\nIntento de login para usuario: ${username}`);
@@ -190,6 +233,7 @@ app.post('/api/login', (req, res) => {
                             apellidos: userData.surname,
                             email: userData.email,
                             username: userData.username,
+                            //TODO: por ahora usamos el id como token. En el futuro deberia ser un JWT real.
                             token: String(userData.id),
                             role: userData.is_management ? 'directiva' : 'profesor'
                         }
@@ -202,7 +246,7 @@ app.post('/api/login', (req, res) => {
     });
 });
 
-// Crear registro de entrada/salida
+//Crear registro de entrada/salida en Odoo
 app.post('/api/register', (req, res) => {
     const { uid, usr_type, mensajeEstado, dateTime } = req.body;
     
@@ -232,7 +276,7 @@ app.post('/api/change-password', (req, res) => {
     const { username, newPassword } = req.body;
 
     if (!username || !newPassword) {
-        return res.status(400).json({ success: false, message: "Username and newPassword are required" });
+        return res.status(400).json({ success: false, message: "Username y newPassword son obligatorios" });
     }
 
     const odoo = new Odoo(odooConfig);
@@ -256,7 +300,7 @@ app.post('/api/change-password', (req, res) => {
     });
 });
 
-// Profile endpoint
+//Datos de perfil de un usuario por username, usado en SettingsScreen
 app.get('/api/user/:username', (req, res) => {
     const username = req.params.username;
     if (!username || username === 'null' || username === 'undefined') return res.status(400).json({ success: false, message: "Invalid username" });
@@ -277,7 +321,7 @@ app.get('/api/user/:username', (req, res) => {
                         nombre: userData.name,
                         apellidos: userData.surname,
                         username: userData.username,
-                        uid: userData.uid || 'Not linked',
+                        uid: userData.uid || 'No vinculado',
                         rol: userData.is_management ? 'Directiva' : 'Profesor'
                     }
                 });
@@ -286,12 +330,14 @@ app.get('/api/user/:username', (req, res) => {
     });
 });
 
+//KPIs y datos del grafico semanal para el dashboard de directiva
 app.get('/api/dashboard', (req, res) => {
     const odoo = new Odoo(odooConfig);
 
     odoo.connect((err) => {
         if (err) return res.status(500).json({ success: false, message: 'Fallo conexión Odoo' });
 
+        //Total de alumnos: para calcular el porcentaje de asistencia media
         odoo.execute_kw('gestion_entrada.alumno', 'search_count', [[[]]], (err, totalAlumnos) => {
             if (err) return res.status(500).json({ success: false, message: 'Error contando alumnos' });
 
@@ -319,11 +365,13 @@ app.get('/api/dashboard', (req, res) => {
                     const recordDateStr = recordDate.toISOString().split('T')[0];
                     const diaSemana = recordDate.getDay(); 
 
+                    //KPIs de hoy
                     if (recordDateStr === hoyStr) {
                         if (record.reg_type === 'entrada_puntual') asistenciaHoy++;
                         if (['error', 'no_autorizado'].includes(record.reg_type)) incidenciasHoy++;
                     }
 
+                    //Acumulado semanal para el grafico (solo L-V)
                     if (diaSemana >= 1 && diaSemana <= 5 && recordDate >= haceUnaSemana) {
                         const dayData = chartDataMap[diaSemana];
                         if (['salida_autorizada_anticipada', 'autorizado'].includes(record.reg_type)) dayData.justificadas++;

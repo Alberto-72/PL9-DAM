@@ -1,6 +1,10 @@
+//Servicio de login y carga de datos de Odoo desde el backend Node.
+//Todas las llamadas pasan por apiClient para tener timeout y manejo de errores unificado.
+
 import { API_ENDPOINTS } from '../config/api';
 import { apiClient } from './apiClient';
 
+//Login contra el backend. Devuelve el objeto usuario si tiene exito, o null si falla.
 export const loginToOdoo = async (username, password) => {
   try {
     const data = await apiClient.post(API_ENDPOINTS.LOGIN, { username, password });

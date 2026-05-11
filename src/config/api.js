@@ -1,20 +1,23 @@
-// unico punto de configuración de red del frontend.
-//si cambias de red o de servidor, cambia SOLO este archivo.
+//Configuracion central de la API
+//Unico punto de configuracion de red del frontend.
+//Si cambias de red o de servidor, cambia SOLO este archivo.
 
-//ESTO HAY QUE CAMBIARLO SI CAMBIAMOS DE RED O DE SERVIDOR. SOLO ESTE ARCHIVO, NUNCA LOS DEMÁS.
+//Configuracion del servidor Node
 const SERVER_HOST = '10.102.6.248';
 const SERVER_PORT = 3001;
 
 export const API_BASE_URL = `http://${SERVER_HOST}:${SERVER_PORT}`;
 
-//por si no responde el servidor, no se quede colgado el frontend esperando una respuesta que nunca llega.
-export const API_TIMEOUT = 10000; // 10 segundos
+//Timeout por defecto para las peticiones (en ms).
+//Si el servidor no responde en este tiempo, se aborta la peticion.
+export const API_TIMEOUT = 10000;
 
-//definimos aquí todas las rutas de la API, para que si cambian, solo tengamos que cambiar este archivo.
+//Endpoints de la API. Si renombras una ruta en el backend, se cambia aqui en un solo sitio.
 export const API_ENDPOINTS = {
   LOGIN:           `${API_BASE_URL}/api/login`,
   VERIFICAR_NFC:   `${API_BASE_URL}/api/verificar-tarjeta`,
   ALUMNOS:         `${API_BASE_URL}/api/alumnos`,
+  PROFESORES:      `${API_BASE_URL}/api/profesores`,
   REGISTER:        `${API_BASE_URL}/api/register`,
   DASHBOARD:       `${API_BASE_URL}/api/dashboard`,
   CHANGE_PASSWORD: `${API_BASE_URL}/api/change-password`,
