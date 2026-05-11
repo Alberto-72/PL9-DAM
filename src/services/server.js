@@ -1,3 +1,4 @@
+console.log("🔥 ESTE ES EL SERVIDOR BUENO 🔥");
 const express = require('express');
 const cors = require('cors');
 const Odoo = require('odoo-xmlrpc');
