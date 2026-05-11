@@ -21,7 +21,7 @@ app.use(express.json());
 // };
 
 const odooConfig = {
-    url: 'http://10.102.7.192',
+    url: 'http://10.102.7.16',
     port: 8069,
     db: 'ControlAcceso',
     username: 'albertoroaf@gmail.com',

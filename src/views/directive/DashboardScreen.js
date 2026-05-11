@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView, StyleSheet, ActivityIndicator } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { API_ENDPOINTS } from '../../config/api';
+import { apiClient } from '../../services/apiClient';
 
 export default function DashboardScreen() {
   const [loading, setLoading] = useState(true);
@@ -13,15 +15,14 @@ export default function DashboardScreen() {
 
   const fetchDashboardData = async () => {
     try {
-      const response = await fetch('http://10.102.7.192:3001/api/dashboard');
-      const data = await response.json();
+      const data = await apiClient.get(API_ENDPOINTS.DASHBOARD);
       
       if (data.success) {
         setKpis(data.kpis);
         setChartData(data.chartData);
       }
     } catch (error) {
-      console.error("Error al cargar el dashboard:", error);
+      console.error("Error al cargar el dashboard:", error.message);
     } finally {
       setLoading(false);
     }
@@ -39,14 +40,12 @@ export default function DashboardScreen() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       
-      {/* Tarjetas de Estadísticas */}
       <View style={styles.statsContainer}>
         <StatCard title="Asistencia Hoy" value={kpis.asistenciaHoy} />
         <StatCard title="Asist. Media" value={kpis.asistenciaMedia} />
         <StatCard title="Incidencias Hoy" value={kpis.incidenciasHoy} color="red" />
       </View>
 
-      {/* Gráfico Multinivel */}
       <View style={styles.card}>
         <View style={styles.cardHeader}>
           <Feather name="bar-chart-2" size={18} color="#1D4ED8" style={{ marginRight: 8 }} />
@@ -72,7 +71,6 @@ export default function DashboardScreen() {
           ))}
         </View>
 
-        {/* Leyenda */}
         <View style={styles.legendContainer}>
           <LegendItem color="#3B82F6" label="Autorizadas" />
           <LegendItem color="#EF4444" label="No Autoriz." />
@@ -102,24 +100,121 @@ const LegendItem = ({ color, label }) => (
 );
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F8FAFC' },
-  content: { padding: 16 },
-  statsContainer: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 24 },
-  statCard: { flex: 1, backgroundColor: 'white', padding: 12, borderRadius: 16, marginHorizontal: 4, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 3 },
-  statTitle: { fontSize: 9, fontWeight: 'bold', color: '#94A3B8', textTransform: 'uppercase', marginBottom: 8 },
-  statRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
-  statValue: { fontSize: 20, fontWeight: '900', color: '#1E293B' },
-  statTrend: { fontSize: 12, fontWeight: 'bold', color: '#22C55E' },
-  card: { backgroundColor: 'white', padding: 20, borderRadius: 16, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 3, marginBottom: 24 },
-  cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 24 },
-  cardTitle: { fontSize: 14, fontWeight: 'bold', color: '#334155' },
-  chartContainer: { flexDirection: 'row', justifyContent: 'space-around', height: 150, alignItems: 'flex-end', paddingBottom: 10 },
-  barWrapper: { alignItems: 'center', flex: 1 },
-  barBackground: { width: 30, height: 120, backgroundColor: '#F1F5F9', borderRadius: 6, justifyContent: 'flex-end', overflow: 'hidden', marginBottom: 8 },
-  barFillSegment: { width: '100%' },
-  barLabel: { fontSize: 12, fontWeight: 'bold', color: '#94A3B8' },
-  legendContainer: { flexDirection: 'row', justifyContent: 'center', marginTop: 15, flexWrap: 'wrap' },
-  legendItem: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 8, marginTop: 4 },
-  legendColor: { width: 12, height: 12, borderRadius: 3, marginRight: 4 },
-  legendLabel: { fontSize: 11, color: '#64748B' }
+  container: {
+    flex: 1,
+    backgroundColor: '#F8FAFC',
+  },
+  content: {
+    padding: 16,
+  },
+  statsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 24,
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: 'white',
+    padding: 12,
+    borderRadius: 16,
+    marginHorizontal: 4,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+  },
+  statTitle: {
+    fontSize: 9,
+    fontWeight: 'bold',
+    color: '#94A3B8',
+    textTransform: 'uppercase',
+    marginBottom: 8,
+  },
+  statRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+  },
+  statValue: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: '#1E293B',
+  },
+  statTrend: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#22C55E',
+  },
+  card: {
+    backgroundColor: 'white',
+    padding: 20,
+    borderRadius: 16,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    marginBottom: 24,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  cardTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#334155',
+  },
+  chartContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    height: 150,
+    alignItems: 'flex-end',
+    paddingBottom: 10,
+  },
+  barWrapper: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  barBackground: {
+    width: 30,
+    height: 120,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 6,
+    justifyContent: 'flex-end',
+    overflow: 'hidden',
+    marginBottom: 8,
+  },
+  barFillSegment: {
+    width: '100%',
+  },
+  barLabel: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#94A3B8',
+  },
+  legendContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: 15,
+    flexWrap: 'wrap',
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 8,
+    marginTop: 4,
+  },
+  legendColor: {
+    width: 12,
+    height: 12,
+    borderRadius: 3,
+    marginRight: 4,
+  },
+  legendLabel: {
+    fontSize: 11,
+    color: '#64748B',
+  },
 });

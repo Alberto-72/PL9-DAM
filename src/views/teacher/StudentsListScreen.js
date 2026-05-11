@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, FlatList, TouchableOpacity, ActivityIndicator, Image, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-
-const ALUMNOS_URL = 'http://10.102.7.193:3001/api/alumnos';
+import { API_ENDPOINTS } from '../../config/api';
+import { apiClient } from '../../services/apiClient';
 
 export default function StudentsListScreen({ navigation }) {
   const [listaAlumnos, setListaAlumnos] = useState([]);
@@ -13,11 +13,10 @@ export default function StudentsListScreen({ navigation }) {
     const cargarAlumnos = async () => {
       try {
         setCargandoAlumnos(true);
-        const response = await fetch(ALUMNOS_URL);
-        const data = await response.json();
+        const data = await apiClient.get(API_ENDPOINTS.ALUMNOS);
         if (data.success) setListaAlumnos(data.alumnos);
       } catch (err) {
-        console.error(err);
+        console.error(err.message);
       } finally {
         setCargandoAlumnos(false);
       }
@@ -85,15 +84,72 @@ export default function StudentsListScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F3F4F6', paddingHorizontal: 16 },
-  centrado: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  buscadorContenedor: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, marginVertical: 16, elevation: 2 },
-  buscadorInput: { flex: 1, fontSize: 16, color: '#1F2937', padding: 0 },
-  alumnoFila: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', padding: 12, borderRadius: 12, marginBottom: 8, elevation: 2 },
-  alumnoFotoContenedor: { width: 50, height: 50, borderRadius: 25, overflow: 'hidden', marginRight: 12 },
-  alumnoFoto: { width: '100%', height: '100%', borderRadius: 25 },
-  alumnoFotoPlaceholder: { width: '100%', height: '100%', borderRadius: 25, backgroundColor: '#F3F4F6', justifyContent: 'center', alignItems: 'center' },
-  alumnoInfo: { flex: 1 },
-  alumnoListaNombre: { fontSize: 16, fontWeight: '600', color: '#111827' },
-  alumnoListaCurso: { fontSize: 13, color: '#6B7280', marginTop: 2 }
+  container: {
+    flex: 1,
+    backgroundColor: '#F3F4F6',
+    paddingHorizontal: 16,
+  },
+  centrado: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  buscadorContenedor: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'white',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginVertical: 16,
+    elevation: 2,
+  },
+  buscadorInput: {
+    flex: 1,
+    fontSize: 16,
+    color: '#1F2937',
+    padding: 0,
+  },
+  alumnoFila: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'white',
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 8,
+    elevation: 2,
+  },
+  alumnoFotoContenedor: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    overflow: 'hidden',
+    marginRight: 12,
+  },
+  alumnoFoto: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 25,
+  },
+  alumnoFotoPlaceholder: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 25,
+    backgroundColor: '#F3F4F6',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  alumnoInfo: {
+    flex: 1,
+  },
+  alumnoListaNombre: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  alumnoListaCurso: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginTop: 2,
+  },
 });

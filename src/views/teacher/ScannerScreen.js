@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, Image, StyleSheet, Alert, Platform, TextInput } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import NfcManager, { NfcTech } from 'react-native-nfc-manager';
-
-const NODE_SERVER_URL = 'http://10.102.7.193:3001'; 
+import { API_ENDPOINTS } from '../../config/api';
+import { apiClient } from '../../services/apiClient';
 
 export default function ScannerScreen({ route, navigation }) {
   const [alumno, setAlumno] = useState(null);
@@ -57,13 +57,14 @@ export default function ScannerScreen({ route, navigation }) {
       const now = new Date();
       const dateTime = now.toISOString().replace('T', ' ').substring(0, 19);
 
-      await fetch(`${NODE_SERVER_URL}/api/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ uid, usr_type, mensajeEstado, dateTime }),
+      await apiClient.post(API_ENDPOINTS.REGISTER, {
+        uid,
+        usr_type,
+        mensajeEstado,
+        dateTime,
       });
     } catch (error) {
-      console.error("Error saving register:", error);
+      console.error("Error saving register:", error.message);
     }
   };
 
@@ -84,26 +85,23 @@ export default function ScannerScreen({ route, navigation }) {
     const esRecreo = totalMinutos >= inicioRecreo && totalMinutos <= finRecreo;
     const esHoraTransporte = totalMinutos >= horaTransporte;
 
-    let mensajeEstado = 'error';       // internal key for database
-    let displayText = 'Error';         // text shown in the badge
+    let mensajeEstado = 'error';
+    let displayText = 'Error';
     let autorizado = false;
-    let estado = 'error';              // 'exito', 'precaucion', 'error'
+    let estado = 'error';
 
-    // === BEFORE 08:00 → Salida Antes de las 8 ===
     if (totalMinutos < inicioJornada) {
       mensajeEstado = 'salida_antes_8';
       displayText = 'Salida Antes de las 8';
       autorizado = true;
       estado = 'exito';
     } 
-    // === AFTER 14:00 → Autorizado ===
     else if (totalMinutos > finJornada) {
       mensajeEstado = 'autorizado';
       displayText = 'Autorizado';
       autorizado = true;
       estado = 'exito';
     } 
-    // === NORMAL HOURS (08:00 - 14:00) ===
     else {
       if (esAdulto) {
         if (esRecreo) {
@@ -120,7 +118,6 @@ export default function ScannerScreen({ route, navigation }) {
         estado = 'exito';
       } 
       else {
-        // === MINOR ===
         if (Platform.OS === 'web') {
           const confirmado = window.confirm(`Control de Menores\n\nEl alumno ${datosAlumno.nombre} es menor de edad.\n\n¿Va acompañado de un adulto?`);
           if (confirmado) {
@@ -170,12 +167,11 @@ export default function ScannerScreen({ route, navigation }) {
               }
             ]
           );
-          return; // exit because Alert is async
+          return;
         }
       }
     }
 
-    // Save state and register (for non-Alert cases)
     const newStudentState = { 
       ...datosAlumno, 
       autorizado, 
@@ -200,12 +196,9 @@ export default function ScannerScreen({ route, navigation }) {
       let byte4 = hexOriginal.substring(0, 2); 
       let hexInvertido = (byte1 + byte2 + byte3 + byte4).toUpperCase(); 
 
-      const response = await fetch(`${NODE_SERVER_URL}/api/verificar-tarjeta`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tarjetaId: hexInvertido })
+      const data = await apiClient.post(API_ENDPOINTS.VERIFICAR_NFC, {
+        tarjetaId: hexInvertido,
       });
-      const data = await response.json();
       
       if (data.success) {
         procesarValidacion({
@@ -228,8 +221,8 @@ export default function ScannerScreen({ route, navigation }) {
         });
       }
     } catch (error) {
-      console.error(error);
-      Alert.alert("Error", "No se puede conectar con el servidor.");
+      console.error(error.message);
+      Alert.alert("Error", error.message || "No se puede conectar con el servidor.");
     } finally {
       setEscaneando(false);
       setUidWeb(''); 
@@ -245,12 +238,10 @@ export default function ScannerScreen({ route, navigation }) {
         NfcManager.requestTechnology(NfcTech.NfcA)
       );
       const tag = await NfcManager.getTag();
-      const response = await fetch(`${NODE_SERVER_URL}/api/verificar-tarjeta`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tarjetaId: tag.id })
+
+      const data = await apiClient.post(API_ENDPOINTS.VERIFICAR_NFC, {
+        tarjetaId: tag.id,
       });
-      const data = await response.json();
       
       if (data.success) {
         procesarValidacion({
@@ -272,8 +263,8 @@ export default function ScannerScreen({ route, navigation }) {
           displayText: 'No Registrado' 
         });
       }
-    } catch (networkError) {
-      Alert.alert("Error", "No se puede conectar con el servidor.");
+    } catch (error) {
+      Alert.alert("Error", error.message || "No se puede conectar con el servidor.");
     } finally {
       if (NfcManager) NfcManager.cancelTechnologyRequest();
       setEscaneando(false);
@@ -322,7 +313,6 @@ export default function ScannerScreen({ route, navigation }) {
     );
   }
 
-  // Dynamic badge styles
   let badgeStyle = styles.badgeExito;
   let textStyle = styles.textoExito;
   let iconName = "checkmark-circle";
@@ -366,25 +356,146 @@ export default function ScannerScreen({ route, navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F3F4F6', padding: 20, justifyContent: 'center' },
-  cajaBlanca: { backgroundColor: 'white', padding: 30, borderRadius: 20, alignItems: 'center', elevation: 5 },
-  circuloIcono: { width: 100, height: 100, borderRadius: 50, backgroundColor: '#EFF6FF', justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
-  circuloIconoActivo: { backgroundColor: '#DCFCE7' },
-  tituloVacio: { fontSize: 20, fontWeight: 'bold', color: '#1F2937', marginBottom: 10 },
-  subtituloVacio: { fontSize: 14, color: '#6B7280', textAlign: 'center', marginBottom: 30 },
-  botonGrande: { backgroundColor: '#2563EB', flexDirection: 'row', width: '100%', padding: 16, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
-  textoBotonGrande: { color: 'white', fontSize: 18, fontWeight: 'bold' },
-  tarjeta: { backgroundColor: 'white', padding: 30, borderRadius: 20, alignItems: 'center', elevation: 5, marginBottom: 20 },
-  avatar: { width: 100, height: 100, borderRadius: 50, borderWidth: 4, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F9FAFB', marginBottom: 16, overflow: 'hidden' },
-  avatarImage: { width: '100%', height: '100%', borderRadius: 50 },
-  nombreAlumno: { fontSize: 24, fontWeight: 'bold', color: '#111827', textAlign: 'center' },
-  cursoAlumno: { fontSize: 16, color: '#6B7280', marginBottom: 20 },
-  badgeExito: { flexDirection: 'row', backgroundColor: '#DCFCE7', padding: 10, borderRadius: 20, alignItems: 'center', marginBottom: 10 },
-  textoExito: { color: '#15803D', fontWeight: 'bold', fontSize: 16, textAlign: 'center' },
-  badgeError: { flexDirection: 'row', backgroundColor: '#FEF2F2', padding: 10, borderRadius: 20, alignItems: 'center', marginBottom: 10 },
-  textoError: { color: '#DC2626', fontWeight: 'bold', fontSize: 16, textAlign: 'center' },
-  badgePrecaucion: { flexDirection: 'row', backgroundColor: '#FEF9C3', padding: 10, borderRadius: 20, alignItems: 'center', marginBottom: 10 },
-  textoPrecaucion: { color: '#A16207', fontWeight: 'bold', fontSize: 14, textAlign: 'center' },
-  botonSiguiente: { backgroundColor: '#2563EB', flexDirection: 'row', width: '100%', padding: 16, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
-  textoBotonSiguiente: { color: 'white', fontSize: 18, fontWeight: 'bold' },
+  container: {
+    flex: 1,
+    backgroundColor: '#F3F4F6',
+    padding: 20,
+    justifyContent: 'center',
+  },
+  cajaBlanca: {
+    backgroundColor: 'white',
+    padding: 30,
+    borderRadius: 20,
+    alignItems: 'center',
+    elevation: 5,
+  },
+  circuloIcono: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: '#EFF6FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  circuloIconoActivo: {
+    backgroundColor: '#DCFCE7',
+  },
+  tituloVacio: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1F2937',
+    marginBottom: 10,
+  },
+  subtituloVacio: {
+    fontSize: 14,
+    color: '#6B7280',
+    textAlign: 'center',
+    marginBottom: 30,
+  },
+  botonGrande: {
+    backgroundColor: '#2563EB',
+    flexDirection: 'row',
+    width: '100%',
+    padding: 16,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  textoBotonGrande: {
+    color: 'white',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  tarjeta: {
+    backgroundColor: 'white',
+    padding: 30,
+    borderRadius: 20,
+    alignItems: 'center',
+    elevation: 5,
+    marginBottom: 20,
+  },
+  avatar: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    borderWidth: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F9FAFB',
+    marginBottom: 16,
+    overflow: 'hidden',
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 50,
+  },
+  nombreAlumno: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#111827',
+    textAlign: 'center',
+  },
+  cursoAlumno: {
+    fontSize: 16,
+    color: '#6B7280',
+    marginBottom: 20,
+  },
+  badgeExito: {
+    flexDirection: 'row',
+    backgroundColor: '#DCFCE7',
+    padding: 10,
+    borderRadius: 20,
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  textoExito: {
+    color: '#15803D',
+    fontWeight: 'bold',
+    fontSize: 16,
+    textAlign: 'center',
+  },
+  badgeError: {
+    flexDirection: 'row',
+    backgroundColor: '#FEF2F2',
+    padding: 10,
+    borderRadius: 20,
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  textoError: {
+    color: '#DC2626',
+    fontWeight: 'bold',
+    fontSize: 16,
+    textAlign: 'center',
+  },
+  badgePrecaucion: {
+    flexDirection: 'row',
+    backgroundColor: '#FEF9C3',
+    padding: 10,
+    borderRadius: 20,
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  textoPrecaucion: {
+    color: '#A16207',
+    fontWeight: 'bold',
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  botonSiguiente: {
+    backgroundColor: '#2563EB',
+    flexDirection: 'row',
+    width: '100%',
+    padding: 16,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  textoBotonSiguiente: {
+    color: 'white',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
 });

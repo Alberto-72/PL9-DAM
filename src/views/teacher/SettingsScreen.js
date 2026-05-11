@@ -2,12 +2,12 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
-import { useAuth } from '../../context/AuthContext';   // nuevo
-
-const NODE_SERVER_URL = 'http://10.102.7.193:3001';
+import { useAuth } from '../../context/AuthContext';
+import { API_ENDPOINTS } from '../../config/api';
+import { apiClient } from '../../services/apiClient';
 
 export default function SettingsScreen() {
-  const { username, onLogout } = useAuth();   // ahora viene del contexto global
+  const { username, onLogout } = useAuth();
 
   const [userData, setUserData] = useState(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
@@ -16,7 +16,6 @@ export default function SettingsScreen() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loadingPassword, setLoadingPassword] = useState(false);
 
-  // DEBUG
   console.log('DEBUG SettingsScreen - username desde contexto global:', username);
 
   useEffect(() => {
@@ -50,8 +49,7 @@ export default function SettingsScreen() {
     console.log(`DEBUG SettingsScreen - Iniciando fetchUserProfile para username: ${username}`);
 
     try {
-      const response = await fetch(`${NODE_SERVER_URL}/api/user/${username}`);
-      const data = await response.json();
+      const data = await apiClient.get(API_ENDPOINTS.USER_PROFILE(username));
       
       console.log('DEBUG SettingsScreen - Respuesta completa del servidor /api/user:', data);
 
@@ -61,7 +59,7 @@ export default function SettingsScreen() {
         console.warn('Error al cargar perfil:', data.message);
       }
     } catch (error) {
-      console.error('Error cargando perfil:', error);
+      console.error('Error cargando perfil:', error.message);
     } finally {
       setLoadingProfile(false);
     }
@@ -86,13 +84,10 @@ export default function SettingsScreen() {
     setLoadingPassword(true);
 
     try {
-      const response = await fetch(`${NODE_SERVER_URL}/api/change-password`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, newPassword }),
+      const data = await apiClient.post(API_ENDPOINTS.CHANGE_PASSWORD, {
+        username,
+        newPassword,
       });
-
-      const data = await response.json();
 
       if (data.success) {
         Alert.alert('Éxito', 'La contraseña se ha actualizado correctamente.');
@@ -102,8 +97,8 @@ export default function SettingsScreen() {
         Alert.alert('Error', data.message || 'No se pudo actualizar la contraseña.');
       }
     } catch (error) {
-      console.error(error);
-      Alert.alert('Error', 'Error al conectar con el servidor.');
+      console.error(error.message);
+      Alert.alert('Error', error.message || 'Error al conectar con el servidor.');
     } finally {
       setLoadingPassword(false);
     }
@@ -122,7 +117,6 @@ export default function SettingsScreen() {
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         
-        {/* Cabecera */}
         <View style={styles.header}>
           <View style={styles.iconContainer}>
             <Feather name="settings" size={32} color="white" />
@@ -130,7 +124,6 @@ export default function SettingsScreen() {
           <Text style={styles.title}>Ajustes de Perfil</Text>
         </View>
 
-        {/* Tarjeta de Información del Usuario */}
         {userData ? (
           <View style={styles.profileCard}>
             <View style={styles.profileHeader}>
@@ -167,7 +160,6 @@ export default function SettingsScreen() {
           </View>
         )}
 
-        {/* Tarjeta de Cambio de Contraseña */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Cambiar Contraseña</Text>
           
@@ -212,7 +204,6 @@ export default function SettingsScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Botón Cerrar Sesión */}
         <TouchableOpacity style={styles.logoutButton} onPress={onLogout}>
           <Feather name="log-out" size={20} color="white" style={{ marginRight: 8 }} />
           <Text style={styles.logoutText}>Cerrar Sesión</Text>
@@ -224,37 +215,209 @@ export default function SettingsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F8FAFC' },
-  centered: { justifyContent: 'center', alignItems: 'center' },
-  loadingText: { marginTop: 12, color: '#64748B', fontWeight: 'bold' },
-  scrollContent: { padding: 24, paddingBottom: 40 },
-  header: { alignItems: 'center', marginBottom: 24 },
-  iconContainer: { backgroundColor: '#1D4ED8', padding: 12, borderRadius: 16, marginBottom: 12, shadowColor: '#1D4ED8', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 6 },
-  title: { fontSize: 24, fontWeight: '900', color: '#1E293B' },
-  
-  profileCard: { backgroundColor: 'white', borderRadius: 20, padding: 20, borderWidth: 1, borderColor: '#F1F5F9', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 3, marginBottom: 24 },
-  profileHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 20, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', paddingBottom: 16 },
-  avatarCircle: { width: 60, height: 60, borderRadius: 30, backgroundColor: '#EFF6FF', justifyContent: 'center', alignItems: 'center', marginRight: 16 },
-  profileNameContainer: { flex: 1 },
-  profileName: { fontSize: 18, fontWeight: 'bold', color: '#1E293B', marginBottom: 4 },
-  profileUsername: { fontSize: 14, color: '#64748B', fontWeight: '500' },
-  profileInfoRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
-  profileInfoLabel: { fontSize: 14, fontWeight: 'bold', color: '#64748B', marginLeft: 8, width: 50 },
-  profileInfoValue: { fontSize: 14, color: '#1E293B', fontWeight: '600', flex: 1 },
-  uidBadge: { backgroundColor: '#F1F5F9', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
-  uidText: { fontSize: 12, fontWeight: 'bold', color: '#334155' },
-
-  errorCard: { backgroundColor: '#FEF2F2', padding: 20, borderRadius: 16, alignItems: 'center', marginBottom: 24 },
-  errorText: { color: '#EF4444', fontWeight: 'bold', textAlign: 'center' },
-
-  card: { backgroundColor: 'white', borderRadius: 20, padding: 24, borderWidth: 1, borderColor: '#F1F5F9', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 3, marginBottom: 24 },
-  cardTitle: { fontSize: 18, fontWeight: 'bold', color: '#334155', marginBottom: 20 },
-  inputWrapper: { position: 'relative', justifyContent: 'center', marginBottom: 16 },
-  inputIcon: { position: 'absolute', left: 12, zIndex: 1 },
-  input: { width: '100%', backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#F1F5F9', borderRadius: 12, paddingVertical: 12, paddingLeft: 40, paddingRight: 16, fontSize: 14, color: '#0F172A', fontWeight: '500', ...(Platform.OS === 'web' ? { outlineStyle: 'none' } : {}) },
-  button: { width: '100%', backgroundColor: '#1D4ED8', alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: 12, shadowColor: '#1D4ED8', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 6, elevation: 4 },
-  buttonDisabled: { backgroundColor: '#93C5FD' },
-  buttonText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
-  logoutButton: { flexDirection: 'row', width: '100%', backgroundColor: '#EF4444', alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: 12, shadowColor: '#EF4444', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 6, elevation: 4 },
-  logoutText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
+  container: {
+    flex: 1,
+    backgroundColor: '#F8FAFC',
+  },
+  centered: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 12,
+    color: '#64748B',
+    fontWeight: 'bold',
+  },
+  scrollContent: {
+    padding: 24,
+    paddingBottom: 40,
+  },
+  header: {
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  iconContainer: {
+    backgroundColor: '#1D4ED8',
+    padding: 12,
+    borderRadius: 16,
+    marginBottom: 12,
+    shadowColor: '#1D4ED8',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: '900',
+    color: '#1E293B',
+  },
+  profileCard: {
+    backgroundColor: 'white',
+    borderRadius: 20,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 3,
+    marginBottom: 24,
+  },
+  profileHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+    paddingBottom: 16,
+  },
+  avatarCircle: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#EFF6FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  profileNameContainer: {
+    flex: 1,
+  },
+  profileName: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1E293B',
+    marginBottom: 4,
+  },
+  profileUsername: {
+    fontSize: 14,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  profileInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  profileInfoLabel: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#64748B',
+    marginLeft: 8,
+    width: 50,
+  },
+  profileInfoValue: {
+    fontSize: 14,
+    color: '#1E293B',
+    fontWeight: '600',
+    flex: 1,
+  },
+  uidBadge: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  uidText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#334155',
+  },
+  errorCard: {
+    backgroundColor: '#FEF2F2',
+    padding: 20,
+    borderRadius: 16,
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  errorText: {
+    color: '#EF4444',
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  card: {
+    backgroundColor: 'white',
+    borderRadius: 20,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 3,
+    marginBottom: 24,
+  },
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#334155',
+    marginBottom: 20,
+  },
+  inputWrapper: {
+    position: 'relative',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  inputIcon: {
+    position: 'absolute',
+    left: 12,
+    zIndex: 1,
+  },
+  input: {
+    width: '100%',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingLeft: 40,
+    paddingRight: 16,
+    fontSize: 14,
+    color: '#0F172A',
+    fontWeight: '500',
+    ...(Platform.OS === 'web' ? { outlineStyle: 'none' } : {}),
+  },
+  button: {
+    width: '100%',
+    backgroundColor: '#1D4ED8',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderRadius: 12,
+    shadowColor: '#1D4ED8',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  buttonDisabled: {
+    backgroundColor: '#93C5FD',
+  },
+  buttonText: {
+    color: 'white',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+  logoutButton: {
+    flexDirection: 'row',
+    width: '100%',
+    backgroundColor: '#EF4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderRadius: 12,
+    shadowColor: '#EF4444',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  logoutText: {
+    color: 'white',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
 });

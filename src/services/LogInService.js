@@ -1,19 +1,12 @@
-const NODE_SERVER_URL = 'http://10.102.7.193:3001';
+import { API_ENDPOINTS } from '../config/api';
+import { apiClient } from './apiClient';
 
 export const loginToOdoo = async (username, password) => {
   try {
-    const response = await fetch(`${NODE_SERVER_URL}/api/login`, {
-      method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json' 
-      },
-      body: JSON.stringify({ username, password }),
-    });
-
-    const data = await response.json();
+    const data = await apiClient.post(API_ENDPOINTS.LOGIN, { username, password });
 
     if (data.success) {
-      return data.usuario; 
+      return data.usuario;
     } else {
       console.warn("Fallo de login:", data.message);
       return null;
