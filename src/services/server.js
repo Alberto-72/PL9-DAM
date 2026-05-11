@@ -11,15 +11,6 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// Odoo connection settings
-// const odooConfig = {
-//     url: 'http://192.168.1.10',
-//     port: 8070,
-//     db: 'admin',
-//     username: 'admin',
-//     password: 'admin'
-// };
-
 const odooConfig = {
     url: 'http://10.102.7.16',
     port: 8069,
@@ -120,54 +111,50 @@ app.post('/api/verificar-tarjeta', (req, res) => {
     });
 });
 
-// Get all students
+// --- RUTA DE ALUMNOS (ARREGLADA) ---
 app.get('/api/alumnos', (req, res) => {
     console.log('\nSolicitando lista de alumnos...');
-
     const odoo = new Odoo(odooConfig);
 
     odoo.connect((err) => {
-        if (err) {
-            console.error('Error de conexion con Odoo:', err);
-            return res.status(500).json({ success: false, error: 'Fallo conexion Odoo' });
-        }
+        if (err) return res.status(500).json({ success: false, error: 'Fallo conexion Odoo' });
 
         odoo.execute_kw(
             'gestion_entrada.alumno',
             'search_read',
             [
                 [[]],
-                {
-                    fields: ['uid', 'name', 'surname', 'photo', 'school_year', 'birth_date', 'can_bus']
-                }
+                { fields: ['uid', 'name', 'surname', 'photo', 'school_year', 'birth_date', 'can_bus', 'email'] }
             ], (err, result) => {
-                if (err) {
-                    console.error('Error obteniendo alumnos:', err);
-                    return res.status(500).json({ success: false, error: err });
-                }
+                if (err) return res.status(500).json({ success: false, error: err });
 
-                const alumnos = (result || []).map(alumno => {
-                    const cursoCorto = (alumno.school_year && alumno.school_year !== false) ? alumno.school_year : null;
+                console.log(`Total alumnos encontrados: ${result ? result.length : 0}`);
+                
+                // Enviamos el resultado crudo para que React pueda leer a.name, a.photo, etc.
+                return res.json({ success: true, alumnos: result });
+            });
+    });
+});
 
-                    return {
-                        uid: alumno.uid,
-                        usr_type: 'alumno',
-                        id: alumno.id,
-                        nombre: `${alumno.name} ${alumno.surname}`,
-                        foto: alumno.photo || null,
-                        curso: cursoCorto,
-                        cursoCompleto: getCursoCompleto(alumno.school_year),
-                        fechaNacimiento: alumno.birth_date,
-                        tieneTransporte: alumno.can_bus || false
-                    };
-                });
+// --- RUTA DE PROFESORES (AÑADIDA) ---
+app.get('/api/profesores', (req, res) => {
+    console.log('\nSolicitando lista de profesores...');
+    const odoo = new Odoo(odooConfig);
 
-                console.log(`Total alumnos encontrados: ${alumnos.length}`);
+    odoo.connect((err) => {
+        if (err) return res.status(500).json({ success: false, error: 'Fallo conexion Odoo' });
 
-                return res.json({
-                    success: true,
-                    alumnos: alumnos
-                });
+        odoo.execute_kw(
+            'gestion_entrada.profesor',
+            'search_read',
+            [
+                [[]],
+                { fields: ['uid', 'name', 'surname', 'email', 'photo', 'is_management'] }
+            ], (err, result) => {
+                if (err) return res.status(500).json({ success: false, error: err });
+
+                console.log(`Total profesores encontrados: ${result ? result.length : 0}`);
+                return res.json({ success: true, profesores: result });
             });
     });
 });
@@ -179,30 +166,21 @@ app.post('/api/login', (req, res) => {
     const odoo = new Odoo(odooConfig);
 
     odoo.connect((err) => {
-        if (err) {
-            console.error('Error de conexión con Odoo en Login:', err);
-            return res.status(500).json({ success: false, message: 'Fallo conexión Odoo' });
-        }
+        if (err) return res.status(500).json({ success: false, message: 'Fallo conexión Odoo' });
 
         odoo.execute_kw(
             'gestion_entrada.profesor',
             'search_read',
             [
                 [[['username', '=', username], ['user_pass', '=', password]]],
-                {
-                    fields: ['name', 'surname', 'email', 'username', 'is_management'],
-                    limit: 1
-                }
+                { fields: ['name', 'surname', 'email', 'username', 'is_management'], limit: 1 }
             ], 
             (err, result) => {
-                if (err) {
-                    console.error('Error en búsqueda de login en Odoo:', err);
-                    return res.status(500).json({ success: false, message: 'Error interno de búsqueda' });
-                }
+                if (err) return res.status(500).json({ success: false, message: 'Error interno de búsqueda' });
 
                 if (result && result.length > 0) {
                     const userData = result[0];
-                    console.log(`LOGIN EXITOSO: ${userData.name} ${userData.surname} (User: ${userData.username})`);
+                    console.log(`LOGIN EXITOSO: ${userData.name} ${userData.surname}`);
 
                     return res.json({
                         success: true,
@@ -217,11 +195,7 @@ app.post('/api/login', (req, res) => {
                         }
                     });
                 } else {
-                    console.log(`LOGIN FALLIDO: Usuario o contraseña incorrectos (${username})`);
-                    return res.status(401).json({
-                        success: false,
-                        message: "Usuario o contraseña no válidos"
-                    });
+                    return res.status(401).json({ success: false, message: "Usuario o contraseña no válidos" });
                 }
             }
         );
@@ -231,57 +205,31 @@ app.post('/api/login', (req, res) => {
 // Crear registro de entrada/salida
 app.post('/api/register', (req, res) => {
     const { uid, usr_type, mensajeEstado, dateTime } = req.body;
-    console.log(uid, usr_type, mensajeEstado, dateTime);
-
-    // Validación de datos ANTES de conectar a Odoo (más eficiente)
+    
     if (!uid || !usr_type || !mensajeEstado) {
-        console.log("ERROR en los datos pasados");
-        return res.status(400).json({ 
-            success: false, 
-            message: "Faltan datos obligatorios (uid, usr_type o mensajeEstado)" 
-        });
+        return res.status(400).json({ success: false, message: "Faltan datos obligatorios" });
     }
 
     const odoo = new Odoo(odooConfig);
 
     odoo.connect((err) => {
-        if (err) {
-            console.error('Error de conexión con Odoo en Register:', err);
-            return res.status(500).json({ success: false, message: 'Fallo conexión Odoo' });
-        }
+        if (err) return res.status(500).json({ success: false, message: 'Fallo conexión Odoo' });
 
         odoo.execute_kw(
             'gestion_entrada.registro',
             'create',
-            [[{
-                'uid': uid,
-                'usr_type': usr_type,
-                'reg_type': mensajeEstado,
-                'dateTime': dateTime
-            }]],
+            [[{ 'uid': uid, 'usr_type': usr_type, 'reg_type': mensajeEstado, 'dateTime': dateTime }]],
             (err, result) => {
-                if (err) {
-                    console.error("Error creando registro:", err);
-                    return res.status(500).json({ 
-                        success: false, 
-                        message: "Error al crear el registro en Odoo" 
-                    });
-                }
-                console.log("Registro creado con el ID:", result);
-                return res.json({ 
-                    success: true, 
-                    id: result,
-                    message: "Registro creado correctamente" 
-                });
+                if (err) return res.status(500).json({ success: false, message: "Error al crear el registro" });
+                return res.json({ success: true, id: result, message: "Registro creado" });
             }
         );
     });
 });
 
-// CHANGE PASSWORD - RAW SQL DIRECTO (la única forma que evita todos los errores de firma XML-RPC)
+// CHANGE PASSWORD 
 app.post('/api/change-password', (req, res) => {
     const { username, newPassword } = req.body;
-    console.log(`\nRequest to change password for user: ${username}`);
 
     if (!username || !newPassword) {
         return res.status(400).json({ success: false, message: "Username and newPassword are required" });
@@ -290,40 +238,16 @@ app.post('/api/change-password', (req, res) => {
     const odoo = new Odoo(odooConfig);
 
     odoo.connect((err) => {
-        if (err) {
-            console.error('Error connecting to Odoo in change-password:', err);
-            return res.status(500).json({ success: false, message: 'Odoo connection failed' });
-        }
+        if (err) return res.status(500).json({ success: false, message: 'Odoo connection failed' });
 
-        // Find user
-        odoo.execute_kw(
-            'gestion_entrada.profesor',
-            'search_read',
-            [
-                [[['username', '=', username]]],
-                { fields: ['id'], limit: 1 }
-            ],
+        odoo.execute_kw('gestion_entrada.profesor', 'search_read', [[[['username', '=', username]]], { fields: ['id'], limit: 1 }],
             (err, result) => {
-                if (err || !result || result.length === 0) {
-                    console.error('User not found:', username);
-                    return res.status(404).json({ success: false, message: 'User not found' });
-                }
+                if (err || !result || result.length === 0) return res.status(404).json({ success: false, message: 'User not found' });
 
                 const userId = result[0].id;
-                console.log(`User found (ID ${userId}), updating password with RAW SQL...`);
-
-                // RAW SQL DIRECTO - formato correcto que funciona con la librería
-                odoo.execute_kw(
-                    'gestion_entrada.profesor',
-                    'execute',
-                    ['UPDATE gestion_entrada_profesor SET user_pass = %s WHERE id = %s', [newPassword, userId]],
+                odoo.execute_kw('gestion_entrada.profesor', 'execute', ['UPDATE gestion_entrada_profesor SET user_pass = %s WHERE id = %s', [newPassword, userId]],
                     (err, result) => {
-                        if (err) {
-                            console.error('Error updating password with RAW SQL:', err);
-                            return res.status(500).json({ success: false, message: err.message || 'Error updating password' });
-                        }
-
-                        console.log(`Password updated successfully for user: ${username} (ID: ${userId})`);
+                        if (err) return res.status(500).json({ success: false, message: err.message });
                         return res.json({ success: true, message: 'Password updated successfully' });
                     }
                 );
@@ -335,36 +259,16 @@ app.post('/api/change-password', (req, res) => {
 // Profile endpoint
 app.get('/api/user/:username', (req, res) => {
     const username = req.params.username;
-    
-    console.log(`\nRequesting profile data for user: ${username}`);
-
-    if (!username || username === 'null' || username === 'undefined') {
-        return res.status(400).json({ success: false, message: "Invalid username" });
-    }
+    if (!username || username === 'null' || username === 'undefined') return res.status(400).json({ success: false, message: "Invalid username" });
 
     const odoo = new Odoo(odooConfig);
 
     odoo.connect((err) => {
-        if (err) {
-            console.error('Error connecting to Odoo:', err);
-            return res.status(500).json({ success: false, message: 'Odoo connection failed' });
-        }
+        if (err) return res.status(500).json({ success: false, message: 'Odoo connection failed' });
 
-        odoo.execute_kw(
-            'gestion_entrada.profesor',
-            'search_read',
-            [
-                [[['username', '=', username]]],
-                {
-                    fields: ['name', 'surname', 'username', 'uid', 'is_management'],
-                    limit: 1
-                }
-            ],
+        odoo.execute_kw('gestion_entrada.profesor', 'search_read', [[[['username', '=', username]]], { fields: ['name', 'surname', 'username', 'uid', 'is_management'], limit: 1 }],
             (err, result) => {
-                if (err || !result || result.length === 0) {
-                    console.error('Error or user not found in Odoo:', err);
-                    return res.status(500).json({ success: false, message: 'User not found' });
-                }
+                if (err || !result || result.length === 0) return res.status(500).json({ success: false, message: 'User not found' });
 
                 const userData = result[0];
                 return res.json({
@@ -383,14 +287,10 @@ app.get('/api/user/:username', (req, res) => {
 });
 
 app.get('/api/dashboard', (req, res) => {
-    console.log('\nSolicitando datos para el Dashboard...');
     const odoo = new Odoo(odooConfig);
 
     odoo.connect((err) => {
-        if (err) {
-            console.error('Error de conexion con Odoo:', err);
-            return res.status(500).json({ success: false, message: 'Fallo conexión Odoo' });
-        }
+        if (err) return res.status(500).json({ success: false, message: 'Fallo conexión Odoo' });
 
         odoo.execute_kw('gestion_entrada.alumno', 'search_count', [[[]]], (err, totalAlumnos) => {
             if (err) return res.status(500).json({ success: false, message: 'Error contando alumnos' });
@@ -398,19 +298,13 @@ app.get('/api/dashboard', (req, res) => {
             const hoy = new Date();
             const haceUnaSemana = new Date();
             haceUnaSemana.setDate(hoy.getDate() - 7);
-            
             const dateStr = haceUnaSemana.toISOString().split('T')[0] + ' 00:00:00';
 
-            odoo.execute_kw('gestion_entrada.registro', 'search_read', [
-                [[['dateTime', '>=', dateStr]]],
-                { fields: ['dateTime', 'reg_type'] }
-            ], (err, records) => {
+            odoo.execute_kw('gestion_entrada.registro', 'search_read', [[[['dateTime', '>=', dateStr]]], { fields: ['dateTime', 'reg_type'] }], (err, records) => {
                 if (err) return res.status(500).json({ success: false, message: 'Error obteniendo registros' });
 
-                let asistenciaHoy = 0;
-                let incidenciasHoy = 0;
+                let asistenciaHoy = 0, incidenciasHoy = 0;
                 const hoyStr = hoy.toISOString().split('T')[0];
-
                 const chartDataMap = {
                     1: { day: 'L', justificadas: 0, injustificadas: 0, otras: 0 },
                     2: { day: 'M', justificadas: 0, injustificadas: 0, otras: 0 },
@@ -421,10 +315,9 @@ app.get('/api/dashboard', (req, res) => {
 
                 records.forEach(record => {
                     if (!record.dateTime) return;
-                    
                     const recordDate = new Date(record.dateTime.replace(' ', 'T') + 'Z');
                     const recordDateStr = recordDate.toISOString().split('T')[0];
-                    const diaSemana = recordDate.getDay(); // 0=Dom, 1=Lun, ..., 5=Vie
+                    const diaSemana = recordDate.getDay(); 
 
                     if (recordDateStr === hoyStr) {
                         if (record.reg_type === 'entrada_puntual') asistenciaHoy++;
@@ -433,52 +326,30 @@ app.get('/api/dashboard', (req, res) => {
 
                     if (diaSemana >= 1 && diaSemana <= 5 && recordDate >= haceUnaSemana) {
                         const dayData = chartDataMap[diaSemana];
-                        
-                        if (['salida_autorizada_anticipada', 'autorizado'].includes(record.reg_type)) {
-                            dayData.justificadas++;
-                        } else if (['anticipada', 'salida_antes_8'].includes(record.reg_type)) {
-                            dayData.injustificadas++;
-                        } else if (['transporte', 'recreo'].includes(record.reg_type)) {
-                            dayData.otras++;
-                        }
+                        if (['salida_autorizada_anticipada', 'autorizado'].includes(record.reg_type)) dayData.justificadas++;
+                        else if (['anticipada', 'salida_antes_8'].includes(record.reg_type)) dayData.injustificadas++;
+                        else if (['transporte', 'recreo'].includes(record.reg_type)) dayData.otras++;
                     }
                 });
 
-                let asistenciaMedia = 0;
-                if (totalAlumnos > 0) {
-                    asistenciaMedia = Math.round((asistenciaHoy / totalAlumnos) * 100);
-                    if (asistenciaMedia > 100) asistenciaMedia = 100;
-                }
+                let asistenciaMedia = totalAlumnos > 0 ? Math.min(Math.round((asistenciaHoy / totalAlumnos) * 100), 100) : 0;
 
-                const chartData = [1, 2, 3, 4, 5].map(dayIndex => {
-                    const d = chartDataMap[dayIndex];
-                    return {
-                        day: d.day,
-                        segments: [
-                            { value: d.justificadas * 5, color: '#3B82F6' },
-                            { value: d.injustificadas * 5, color: '#EF4444' },
-                            { value: d.otras * 5, color: '#10B981' }
-                        ]
-                    };
-                });
+                const chartData = [1, 2, 3, 4, 5].map(dayIndex => ({
+                    day: chartDataMap[dayIndex].day,
+                    segments: [
+                        { value: chartDataMap[dayIndex].justificadas * 5, color: '#3B82F6' },
+                        { value: chartDataMap[dayIndex].injustificadas * 5, color: '#EF4444' },
+                        { value: chartDataMap[dayIndex].otras * 5, color: '#10B981' }
+                    ]
+                }));
 
-                res.json({
-                    success: true,
-                    kpis: {
-                        asistenciaHoy,
-                        incidenciasHoy,
-                        asistenciaMedia: `${asistenciaMedia}%`
-                    },
-                    chartData
-                });
+                res.json({ success: true, kpis: { asistenciaHoy, incidenciasHoy, asistenciaMedia: `${asistenciaMedia}%` }, chartData });
             });
         });
     });
 });
 
-
-// Start server on port 3001
 const PORT = 3001;
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server ready at http://localhost:${PORT}`);
+    console.log(`Server ready at port ${PORT}`);
 });
