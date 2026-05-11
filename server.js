@@ -1,4 +1,4 @@
-// Express server connecting the mobile app with Odoo
+//Servidor Express que conecta la app mvil y la app web con Odoo
 const express = require('express');
 const cors = require('cors');
 const Odoo = require('odoo-xmlrpc');
@@ -11,15 +11,7 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// Odoo connection settings
-// const odooConfig = {
-//     url: 'http://192.168.1.10',
-//     port: 8070,
-//     db: 'admin',
-//     username: 'admin',
-//     password: 'admin'
-// };
-
+//Configuracion de conexion a Odoo
 const odooConfig = {
     url: 'http://10.102.7.16',
     port: 8069,
@@ -28,42 +20,45 @@ const odooConfig = {
     password: 'AlberPabKil123'
 };
 
-// Mapping of school_year selection keys to full course names
+//Mapeo de claves school_year (cortas) a nombre completo del curso.
+//Se usa solo en /api/verificar-tarjeta (NFC), donde el frontend muestra el curso largo directamente.
+//En /api/alumnos NO se transforma, se devuelven los datos crudos para que el frontend decida como mostrarlos.
 const CURSOS = [
-    ['1ESO', '1º Educación Secundaria Obligatoria'],
-    ['2ESO', '2º Educación Secundaria Obligatoria'],
-    ['3ESO', '3º Educación Secundaria Obligatoria'],
-    ['3ESODIV', '3º ESO - Diversificación'],
-    ['4ESO', '4º Educación Secundaria Obligatoria'],
-    ['4ESODIV', '4º ESO - Diversificación'],
-    ['1BACH_CIEN', '1º Bachillerato Ciencias y Tecnología'],
-    ['2BACH_CIEN', '2º Bachillerato Ciencias y Tecnología'],
-    ['1BACH_HCS', '1º Bachillerato Humanidades y C. Sociales'],
-    ['2BACH_HCS', '2º Bachillerato Humanidades y C. Sociales'],
-    ['1CFGB_AGR', '1º CFGB Aprovechamientos Forestales'],
-    ['2CFGB_AGR', '2º CFGB Agrojardinería y Comp. Florales'],
-    ['1CFGM_SMR', '1º CFGM Sistemas Microinformáticos y Redes'],
-    ['2CFGM_SMR', '2º CFGM Sistemas Microinformáticos y Redes'],
-    ['1CFGM_ACMN', '1º CFGM Aprovechamiento y Cons. Medio Natural'],
-    ['2CFGM_ACMN', '2º CFGM Aprovechamiento y Cons. Medio Natural'],
-    ['1DAM', '1º CFGS Desarrollo de Aplicaciones Multiplataforma'],
-    ['2DAM', '2º CFGS Desarrollo de Aplicaciones Multiplataforma'],
-    ['1CFGS_GFMN', '1º CFGS Gestión Forestal y del Medio Natural'],
-    ['2CFGS_GFMN', '2º CFGS Gestión Forestal y del Medio Natural']
+    ['1ESO', '1 Educacion Secundaria Obligatoria'],
+    ['2ESO', '2 Educacion Secundaria Obligatoria'],
+    ['3ESO', '3 Educacion Secundaria Obligatoria'],
+    ['3ESODIV', '3 ESO - Diversificacion'],
+    ['4ESO', '4 Educacion Secundaria Obligatoria'],
+    ['4ESODIV', '4 ESO - Diversificacion'],
+    ['1BACH_CIEN', '1 Bachillerato Ciencias y Tecnologia'],
+    ['2BACH_CIEN', '2 Bachillerato Ciencias y Tecnologia'],
+    ['1BACH_HCS', '1 Bachillerato Humanidades y C. Sociales'],
+    ['2BACH_HCS', '2 Bachillerato Humanidades y C. Sociales'],
+    ['1CFGB_AGR', '1 CFGB Aprovechamientos Forestales'],
+    ['2CFGB_AGR', '2 CFGB Agrojardineria y Comp. Florales'],
+    ['1CFGM_SMR', '1 CFGM Sistemas Microinformaticos y Redes'],
+    ['2CFGM_SMR', '2 CFGM Sistemas Microinformaticos y Redes'],
+    ['1CFGM_ACMN', '1 CFGM Aprovechamiento y Cons. Medio Natural'],
+    ['2CFGM_ACMN', '2 CFGM Aprovechamiento y Cons. Medio Natural'],
+    ['1DAM', '1 CFGS Desarrollo de Aplicaciones Multiplataforma'],
+    ['2DAM', '2 CFGS Desarrollo de Aplicaciones Multiplataforma'],
+    ['1CFGS_GFMN', '1 CFGS Gestion Forestal y del Medio Natural'],
+    ['2CFGS_GFMN', '2 CFGS Gestion Forestal y del Medio Natural']
 ];
 
+//Funcion auxiliar para traducir codigo corto de curso a nombre completo
 function getCursoCompleto(key) {
     if (!key || key === false) return null;
     const found = CURSOS.find(([short]) => short === key);
     return found ? found[1] : key;
 }
 
-// Test route
+//Ruta de test, util para comprobar desde el navegador que el servidor responde
 app.get('/', (req, res) => {
     res.send('Servidor Odoo funcionando correctamente.');
 });
 
-// Main route: NFC
+//Verificar tarjeta NFC: busca un alumno por UID y devuelve sus datos para mostrar en el scanner
 app.post('/api/verificar-tarjeta', (req, res) => {
     const { tarjetaId } = req.body;
     console.log(`\nUID Recibido: ${tarjetaId} -> Consultando Odoo...`);
@@ -95,6 +90,8 @@ app.post('/api/verificar-tarjeta', (req, res) => {
                     const alumno = result[0];
                     const nombreCompleto = `${alumno.name} ${alumno.surname}`;
 
+                    //Aqui SI transformamos los campos porque el scanner los muestra directamente,
+                    //no tiene un sistema de mapeo propio como StudentsListScreen
                     const cursoCorto = (alumno.school_year && alumno.school_year !== false) ? alumno.school_year : null;
                     const cursoLargo = getCursoCompleto(alumno.school_year);
 
@@ -120,7 +117,7 @@ app.post('/api/verificar-tarjeta', (req, res) => {
     });
 });
 
-// Get all students
+//Listado de alumnos: devuelve datos CRUDOS de Odoo (sin transformar) para que el frontend los formatee
 app.get('/api/alumnos', (req, res) => {
     console.log('\nSolicitando lista de alumnos...');
 
@@ -138,7 +135,9 @@ app.get('/api/alumnos', (req, res) => {
             [
                 [[]],
                 {
-                    fields: ['uid', 'name', 'surname', 'photo', 'school_year', 'birth_date', 'can_bus']
+                    //Campos crudos: name, surname, school_year, can_bus, photo, birth_date, email, uid
+                    //El frontend se encarga de combinarlos (ej. nombre + apellido) y traducir codigos
+                    fields: ['uid', 'name', 'surname', 'photo', 'school_year', 'birth_date', 'can_bus', 'email']
                 }
             ], (err, result) => {
                 if (err) {
@@ -146,32 +145,53 @@ app.get('/api/alumnos', (req, res) => {
                     return res.status(500).json({ success: false, error: err });
                 }
 
-                const alumnos = (result || []).map(alumno => {
-                    const cursoCorto = (alumno.school_year && alumno.school_year !== false) ? alumno.school_year : null;
-
-                    return {
-                        uid: alumno.uid,
-                        usr_type: 'alumno',
-                        id: alumno.id,
-                        nombre: `${alumno.name} ${alumno.surname}`,
-                        foto: alumno.photo || null,
-                        curso: cursoCorto,
-                        cursoCompleto: getCursoCompleto(alumno.school_year),
-                        fechaNacimiento: alumno.birth_date,
-                        tieneTransporte: alumno.can_bus || false
-                    };
-                });
-
-                console.log(`Total alumnos encontrados: ${alumnos.length}`);
+                console.log(`Total alumnos encontrados: ${(result || []).length}`);
 
                 return res.json({
                     success: true,
-                    alumnos: alumnos
+                    alumnos: result || []
                 });
             });
     });
 });
 
+//Listado de profesores: igual que alumnos, devuelve datos crudos. Endpoint integrado del server de Kilian.
+app.get('/api/profesores', (req, res) => {
+    console.log('\nSolicitando lista de profesores...');
+
+    const odoo = new Odoo(odooConfig);
+
+    odoo.connect((err) => {
+        if (err) {
+            console.error('Error de conexion con Odoo:', err);
+            return res.status(500).json({ success: false, error: 'Fallo conexion Odoo' });
+        }
+
+        odoo.execute_kw(
+            'gestion_entrada.profesor',
+            'search_read',
+            [
+                [[]],
+                {
+                    fields: ['uid', 'name', 'surname', 'email', 'photo']
+                }
+            ], (err, result) => {
+                if (err) {
+                    console.error('Error obteniendo profesores:', err);
+                    return res.status(500).json({ success: false, error: err });
+                }
+
+                console.log(`Total profesores encontrados: ${(result || []).length}`);
+
+                return res.json({
+                    success: true,
+                    profesores: result || []
+                });
+            });
+    });
+});
+
+//Login: valida usuario y contrasea contra Odoo y devuelve los datos del usuario
 app.post('/api/login', (req, res) => {
     const { username, password } = req.body;
     console.log(`\nIntento de login para usuario: ${username}`);
@@ -180,8 +200,8 @@ app.post('/api/login', (req, res) => {
 
     odoo.connect((err) => {
         if (err) {
-            console.error('Error de conexión con Odoo en Login:', err);
-            return res.status(500).json({ success: false, message: 'Fallo conexión Odoo' });
+            console.error('Error de conexion con Odoo en Login:', err);
+            return res.status(500).json({ success: false, message: 'Fallo conexion Odoo' });
         }
 
         odoo.execute_kw(
@@ -193,11 +213,11 @@ app.post('/api/login', (req, res) => {
                     fields: ['name', 'surname', 'email', 'username', 'is_management'],
                     limit: 1
                 }
-            ], 
+            ],
             (err, result) => {
                 if (err) {
-                    console.error('Error en búsqueda de login en Odoo:', err);
-                    return res.status(500).json({ success: false, message: 'Error interno de búsqueda' });
+                    console.error('Error en busqueda de login en Odoo:', err);
+                    return res.status(500).json({ success: false, message: 'Error interno de busqueda' });
                 }
 
                 if (result && result.length > 0) {
@@ -212,15 +232,16 @@ app.post('/api/login', (req, res) => {
                             apellidos: userData.surname,
                             email: userData.email,
                             username: userData.username,
+                            //TODO: por ahora usamos el id como token. En el futuro deberia ser un JWT real.
                             token: String(userData.id),
                             role: userData.is_management ? 'directiva' : 'profesor'
                         }
                     });
                 } else {
-                    console.log(`LOGIN FALLIDO: Usuario o contraseña incorrectos (${username})`);
+                    console.log(`LOGIN FALLIDO: Usuario o contrasea incorrectos (${username})`);
                     return res.status(401).json({
                         success: false,
-                        message: "Usuario o contraseña no válidos"
+                        message: "Usuario o contrasea no validos"
                     });
                 }
             }
@@ -228,17 +249,17 @@ app.post('/api/login', (req, res) => {
     });
 });
 
-// Crear registro de entrada/salida
+//Crear registro de entrada/salida en Odoo
 app.post('/api/register', (req, res) => {
     const { uid, usr_type, mensajeEstado, dateTime } = req.body;
     console.log(uid, usr_type, mensajeEstado, dateTime);
 
-    // Validación de datos ANTES de conectar a Odoo (más eficiente)
+    //Validacion de datos ANTES de conectar a Odoo (mas eficiente: si faltan datos, no abrimos conexion)
     if (!uid || !usr_type || !mensajeEstado) {
         console.log("ERROR en los datos pasados");
-        return res.status(400).json({ 
-            success: false, 
-            message: "Faltan datos obligatorios (uid, usr_type o mensajeEstado)" 
+        return res.status(400).json({
+            success: false,
+            message: "Faltan datos obligatorios (uid, usr_type o mensajeEstado)"
         });
     }
 
@@ -246,8 +267,8 @@ app.post('/api/register', (req, res) => {
 
     odoo.connect((err) => {
         if (err) {
-            console.error('Error de conexión con Odoo en Register:', err);
-            return res.status(500).json({ success: false, message: 'Fallo conexión Odoo' });
+            console.error('Error de conexion con Odoo en Register:', err);
+            return res.status(500).json({ success: false, message: 'Fallo conexion Odoo' });
         }
 
         odoo.execute_kw(
@@ -262,40 +283,41 @@ app.post('/api/register', (req, res) => {
             (err, result) => {
                 if (err) {
                     console.error("Error creando registro:", err);
-                    return res.status(500).json({ 
-                        success: false, 
-                        message: "Error al crear el registro en Odoo" 
+                    return res.status(500).json({
+                        success: false,
+                        message: "Error al crear el registro en Odoo"
                     });
                 }
                 console.log("Registro creado con el ID:", result);
-                return res.json({ 
-                    success: true, 
+                return res.json({
+                    success: true,
                     id: result,
-                    message: "Registro creado correctamente" 
+                    message: "Registro creado correctamente"
                 });
             }
         );
     });
 });
 
-// CHANGE PASSWORD - RAW SQL DIRECTO (la única forma que evita todos los errores de firma XML-RPC)
+//Cambio de contrasea: se hace con SQL directo porque la libreria odoo-xmlrpc
+//tiene problemas con la firma del metodo write() para campos de tipo password en este modelo.
 app.post('/api/change-password', (req, res) => {
     const { username, newPassword } = req.body;
-    console.log(`\nRequest to change password for user: ${username}`);
+    console.log(`\nPeticion de cambio de contrasea para usuario: ${username}`);
 
     if (!username || !newPassword) {
-        return res.status(400).json({ success: false, message: "Username and newPassword are required" });
+        return res.status(400).json({ success: false, message: "Username y newPassword son obligatorios" });
     }
 
     const odoo = new Odoo(odooConfig);
 
     odoo.connect((err) => {
         if (err) {
-            console.error('Error connecting to Odoo in change-password:', err);
-            return res.status(500).json({ success: false, message: 'Odoo connection failed' });
+            console.error('Error conectando a Odoo en change-password:', err);
+            return res.status(500).json({ success: false, message: 'Fallo conexion Odoo' });
         }
 
-        // Find user
+        //Buscamos primero el id del usuario
         odoo.execute_kw(
             'gestion_entrada.profesor',
             'search_read',
@@ -305,26 +327,26 @@ app.post('/api/change-password', (req, res) => {
             ],
             (err, result) => {
                 if (err || !result || result.length === 0) {
-                    console.error('User not found:', username);
-                    return res.status(404).json({ success: false, message: 'User not found' });
+                    console.error('Usuario no encontrado:', username);
+                    return res.status(404).json({ success: false, message: 'Usuario no encontrado' });
                 }
 
                 const userId = result[0].id;
-                console.log(`User found (ID ${userId}), updating password with RAW SQL...`);
+                console.log(`Usuario encontrado (ID ${userId}), actualizando contrasea con SQL directo...`);
 
-                // RAW SQL DIRECTO - formato correcto que funciona con la librería
+                //SQL directo: unica forma de evitar el error de firma XML-RPC con este campo
                 odoo.execute_kw(
                     'gestion_entrada.profesor',
                     'execute',
                     ['UPDATE gestion_entrada_profesor SET user_pass = %s WHERE id = %s', [newPassword, userId]],
                     (err, result) => {
                         if (err) {
-                            console.error('Error updating password with RAW SQL:', err);
-                            return res.status(500).json({ success: false, message: err.message || 'Error updating password' });
+                            console.error('Error actualizando contrasea con SQL directo:', err);
+                            return res.status(500).json({ success: false, message: err.message || 'Error al actualizar contrasea' });
                         }
 
-                        console.log(`Password updated successfully for user: ${username} (ID: ${userId})`);
-                        return res.json({ success: true, message: 'Password updated successfully' });
+                        console.log(`Contrasea actualizada correctamente para usuario: ${username} (ID: ${userId})`);
+                        return res.json({ success: true, message: 'Contrasea actualizada correctamente' });
                     }
                 );
             }
@@ -332,22 +354,22 @@ app.post('/api/change-password', (req, res) => {
     });
 });
 
-// Profile endpoint
+//Datos de perfil de un usuario por username, usado en SettingsScreen
 app.get('/api/user/:username', (req, res) => {
     const username = req.params.username;
-    
-    console.log(`\nRequesting profile data for user: ${username}`);
+
+    console.log(`\nSolicitando datos de perfil para usuario: ${username}`);
 
     if (!username || username === 'null' || username === 'undefined') {
-        return res.status(400).json({ success: false, message: "Invalid username" });
+        return res.status(400).json({ success: false, message: "Username invalido" });
     }
 
     const odoo = new Odoo(odooConfig);
 
     odoo.connect((err) => {
         if (err) {
-            console.error('Error connecting to Odoo:', err);
-            return res.status(500).json({ success: false, message: 'Odoo connection failed' });
+            console.error('Error conectando a Odoo:', err);
+            return res.status(500).json({ success: false, message: 'Fallo conexion Odoo' });
         }
 
         odoo.execute_kw(
@@ -362,8 +384,8 @@ app.get('/api/user/:username', (req, res) => {
             ],
             (err, result) => {
                 if (err || !result || result.length === 0) {
-                    console.error('Error or user not found in Odoo:', err);
-                    return res.status(500).json({ success: false, message: 'User not found' });
+                    console.error('Error o usuario no encontrado en Odoo:', err);
+                    return res.status(500).json({ success: false, message: 'Usuario no encontrado' });
                 }
 
                 const userData = result[0];
@@ -373,7 +395,7 @@ app.get('/api/user/:username', (req, res) => {
                         nombre: userData.name,
                         apellidos: userData.surname,
                         username: userData.username,
-                        uid: userData.uid || 'Not linked',
+                        uid: userData.uid || 'No vinculado',
                         rol: userData.is_management ? 'Directiva' : 'Profesor'
                     }
                 });
@@ -382,6 +404,7 @@ app.get('/api/user/:username', (req, res) => {
     });
 });
 
+//KPIs y datos del grafico semanal para el dashboard de directiva
 app.get('/api/dashboard', (req, res) => {
     console.log('\nSolicitando datos para el Dashboard...');
     const odoo = new Odoo(odooConfig);
@@ -389,18 +412,20 @@ app.get('/api/dashboard', (req, res) => {
     odoo.connect((err) => {
         if (err) {
             console.error('Error de conexion con Odoo:', err);
-            return res.status(500).json({ success: false, message: 'Fallo conexión Odoo' });
+            return res.status(500).json({ success: false, message: 'Fallo conexion Odoo' });
         }
 
+        //Total de alumnos: para calcular el porcentaje de asistencia media
         odoo.execute_kw('gestion_entrada.alumno', 'search_count', [[[]]], (err, totalAlumnos) => {
             if (err) return res.status(500).json({ success: false, message: 'Error contando alumnos' });
 
             const hoy = new Date();
             const haceUnaSemana = new Date();
             haceUnaSemana.setDate(hoy.getDate() - 7);
-            
+
             const dateStr = haceUnaSemana.toISOString().split('T')[0] + ' 00:00:00';
 
+            //Traemos todos los registros de la ultima semana
             odoo.execute_kw('gestion_entrada.registro', 'search_read', [
                 [[['dateTime', '>=', dateStr]]],
                 { fields: ['dateTime', 'reg_type'] }
@@ -411,6 +436,7 @@ app.get('/api/dashboard', (req, res) => {
                 let incidenciasHoy = 0;
                 const hoyStr = hoy.toISOString().split('T')[0];
 
+                //Estructura para acumular datos por dia de la semana (L-V)
                 const chartDataMap = {
                     1: { day: 'L', justificadas: 0, injustificadas: 0, otras: 0 },
                     2: { day: 'M', justificadas: 0, injustificadas: 0, otras: 0 },
@@ -421,19 +447,21 @@ app.get('/api/dashboard', (req, res) => {
 
                 records.forEach(record => {
                     if (!record.dateTime) return;
-                    
+
                     const recordDate = new Date(record.dateTime.replace(' ', 'T') + 'Z');
                     const recordDateStr = recordDate.toISOString().split('T')[0];
-                    const diaSemana = recordDate.getDay(); // 0=Dom, 1=Lun, ..., 5=Vie
+                    const diaSemana = recordDate.getDay(); //0=Dom, 1=Lun, ..., 5=Vie
 
+                    //KPIs de hoy
                     if (recordDateStr === hoyStr) {
                         if (record.reg_type === 'entrada_puntual') asistenciaHoy++;
                         if (['error', 'no_autorizado'].includes(record.reg_type)) incidenciasHoy++;
                     }
 
+                    //Acumulado semanal para el grafico (solo L-V)
                     if (diaSemana >= 1 && diaSemana <= 5 && recordDate >= haceUnaSemana) {
                         const dayData = chartDataMap[diaSemana];
-                        
+
                         if (['salida_autorizada_anticipada', 'autorizado'].includes(record.reg_type)) {
                             dayData.justificadas++;
                         } else if (['anticipada', 'salida_antes_8'].includes(record.reg_type)) {
@@ -450,6 +478,7 @@ app.get('/api/dashboard', (req, res) => {
                     if (asistenciaMedia > 100) asistenciaMedia = 100;
                 }
 
+                //Multiplicamos por 5 para que las barras tengan altura visible en el grafico
                 const chartData = [1, 2, 3, 4, 5].map(dayIndex => {
                     const d = chartDataMap[dayIndex];
                     return {
@@ -477,8 +506,8 @@ app.get('/api/dashboard', (req, res) => {
 });
 
 
-// Start server on port 3001
+//Servidor escuchando en el puerto 3001 en todas las interfaces de red
 const PORT = 3001;
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server ready at http://localhost:${PORT}`);
+    console.log(`Servidor listo en http://localhost:${PORT}`);
 });

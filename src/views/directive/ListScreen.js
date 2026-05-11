@@ -4,28 +4,26 @@ import { Feather, Ionicons } from '@expo/vector-icons';
 import { fetchOdooData } from '../../services/LogInService';
 
 export default function ListScreen({ route, navigation }) {
-  const { type } = route.params; 
+  const { type } = route.params;
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
-  
+
   const [modalVisible, setModalVisible] = useState(false);
   const [usuarioSeleccionado, setUsuarioSeleccionado] = useState(null);
 
+  //Cargamos alumnos o profesores segun el tipo recibido por params
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
       const isAlumnado = type === 'alumnado';
-      const model = isAlumnado ? 'gestion_entrada.alumno' : 'gestion_entrada.profesor'; 
-      
-      const fields = isAlumnado 
-      ? ["uid", "name", "surname", "school_year", "can_bus", "photo", "birth_date", "email"] 
-      : ["uid", "name", "surname", "email", "photo"];
+      const model = isAlumnado ? 'gestion_entrada.alumno' : 'gestion_entrada.profesor';
 
       try {
-        const result = await fetchOdooData(model, fields);
+        //Nueva firma: fetchOdooData solo recibe el modelo. El backend decide que campos devolver.
+        const result = await fetchOdooData(model);
         setData(result);
       } catch (e) {
-        console.error("Error cargando datos:", e);
+        console.error("Error cargando datos:", e.message);
       } finally {
         setLoading(false);
       }
@@ -38,6 +36,7 @@ export default function ListScreen({ route, navigation }) {
     setModalVisible(true);
   };
 
+  //Si el usuario no tiene NFC vinculado, navegamos a la pantalla de vinculacion
   const manejarNFC = (item) => {
     if (!item.uid) {
       navigation.navigate('NFC', { usuarioParaVincular: item });
@@ -58,14 +57,13 @@ export default function ListScreen({ route, navigation }) {
         <View style={{ flex: 1 }}>
           <View style={styles.cardHeader}>
             <Text style={styles.name}>{item.name} {item.surname}</Text>
-            {}
             <TouchableOpacity onPress={() => manejarNFC(item)} disabled={!!item.uid}>
               <Text style={[styles.uid, !item.uid && styles.uidMissing]}>
                 {item.uid || 'Sin NFC'}
               </Text>
             </TouchableOpacity>
           </View>
-          
+
           <View style={styles.cardFooter}>
             <View style={{ flex: 1 }}>
               {type === 'alumnado' ? (
@@ -80,7 +78,7 @@ export default function ListScreen({ route, navigation }) {
                 </View>
               ) : (
                 <Text style={styles.detailText} numberOfLines={1}>
-                    {item.email && item.email !== false ? item.email : 'Sin email'}
+                  {item.email && item.email !== false ? item.email : 'Sin email'}
                 </Text>
               )}
             </View>
@@ -111,7 +109,6 @@ export default function ListScreen({ route, navigation }) {
         />
       )}
 
-      {}
       <Modal
         animationType="fade"
         transparent={true}
@@ -133,17 +130,17 @@ export default function ListScreen({ route, navigation }) {
                     <Ionicons name="person" size={60} color="#CBD5E1" />
                   )}
                 </View>
-                
+
                 <Text style={styles.modalName}>{usuarioSeleccionado.name} {usuarioSeleccionado.surname}</Text>
                 <View style={styles.modalDivider} />
 
                 <View style={styles.modalInfoRow}>
-                    <Text style={styles.modalLabel}>Email:</Text>
-                    <Text style={styles.modalValue}>
-                      {usuarioSeleccionado.email && usuarioSeleccionado.email !== false && usuarioSeleccionado.email !== "false"
-                        ? String(usuarioSeleccionado.email)
-                        : "Sin correo registrado"}
-                    </Text>
+                  <Text style={styles.modalLabel}>Email:</Text>
+                  <Text style={styles.modalValue}>
+                    {usuarioSeleccionado.email && usuarioSeleccionado.email !== false && usuarioSeleccionado.email !== "false"
+                      ? String(usuarioSeleccionado.email)
+                      : "Sin correo registrado"}
+                  </Text>
                 </View>
 
                 {type === 'alumnado' && (
@@ -155,7 +152,7 @@ export default function ListScreen({ route, navigation }) {
 
                 <View style={styles.modalInfoRow}>
                   <Text style={styles.modalLabel}>NFC UID:</Text>
-                  <Text style={[styles.modalValue, !usuarioSeleccionado.uid && {color: '#EF4444'}]}>
+                  <Text style={[styles.modalValue, !usuarioSeleccionado.uid && { color: '#EF4444' }]}>
                     {usuarioSeleccionado.uid || 'Pendiente'}
                   </Text>
                 </View>
@@ -169,34 +166,188 @@ export default function ListScreen({ route, navigation }) {
 }
 
 const styles = StyleSheet.create({
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F8FAFC' },
-  loadingText: { marginTop: 12, color: '#64748B', fontWeight: 'bold' },
-  container: { flex: 1, backgroundColor: '#F8FAFC' },
-  listPadding: { padding: 16 },
-  card: { backgroundColor: 'white', borderRadius: 12, marginBottom: 12, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 3 },
-  cardContent: { flexDirection: 'row', alignItems: 'center', padding: 14 },
-  avatarMini: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#F1F5F9', marginRight: 12, overflow: 'hidden', justifyContent: 'center', alignItems: 'center' },
-  avatarImage: { width: '100%', height: '100%' },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 },
-  name: { fontSize: 15, fontWeight: '700', color: '#1E293B', flex: 1, marginRight: 8 },
-  uid: { fontSize: 10, fontWeight: '800', color: '#1D4ED8', backgroundColor: '#EFF6FF', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
-  uidMissing: { color: '#EF4444', backgroundColor: '#FEF2F2' },
-  cardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: 1, borderTopColor: '#F1F5F9', paddingTop: 8 },
-  infoRow: { flexDirection: 'row', alignItems: 'center' },
-  detailText: { fontSize: 12, color: '#64748B', marginRight: 10 },
-  busRow: { flexDirection: 'row', alignItems: 'center' },
-  textGreen: { color: '#22C55E', fontWeight: 'bold', fontSize: 11 },
-  textRed: { color: '#EF4444', fontWeight: 'bold', fontSize: 11 },
-  btnVerDatos: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F0F4FF', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
-  textoBtn: { color: '#1D4ED8', fontSize: 12, fontWeight: '700' },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center', padding: 20 },
-  modalContent: { backgroundColor: 'white', width: '100%', maxWidth: 400, borderRadius: 20, padding: 25, alignItems: 'center', elevation: 10 },
-  closeBtn: { position: 'absolute', top: 10, right: 10 },
-  modalBody: { width: '100%', alignItems: 'center' },
-  modalAvatarContainer: { width: 100, height: 100, borderRadius: 50, backgroundColor: '#F1F5F9', marginBottom: 15, overflow: 'hidden', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#2563EB' },
-  modalName: { fontSize: 20, fontWeight: 'bold', color: '#1E293B', marginBottom: 10 },
-  modalDivider: { width: '100%', height: 1, backgroundColor: '#E2E8F0', marginBottom: 15 },
-  modalInfoRow: { width: '100%', flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
-  modalLabel: { fontWeight: 'bold', color: '#64748B', fontSize: 14 },
-  modalValue: { color: '#1E293B', fontSize: 14, flex: 1, textAlign: 'right', marginLeft: 10 }
+  center: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+  },
+  loadingText: {
+    marginTop: 12,
+    color: '#64748B',
+    fontWeight: 'bold',
+  },
+  container: {
+    flex: 1,
+    backgroundColor: '#F8FAFC',
+  },
+  listPadding: {
+    padding: 16,
+  },
+  card: {
+    backgroundColor: 'white',
+    borderRadius: 12,
+    marginBottom: 12,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+  },
+  cardContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+  },
+  avatarMini: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#F1F5F9',
+    marginRight: 12,
+    overflow: 'hidden',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 6,
+  },
+  name: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1E293B',
+    flex: 1,
+    marginRight: 8,
+  },
+  uid: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#1D4ED8',
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  uidMissing: {
+    color: '#EF4444',
+    backgroundColor: '#FEF2F2',
+  },
+  cardFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+    paddingTop: 8,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  detailText: {
+    fontSize: 12,
+    color: '#64748B',
+    marginRight: 10,
+  },
+  busRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  textGreen: {
+    color: '#22C55E',
+    fontWeight: 'bold',
+    fontSize: 11,
+  },
+  textRed: {
+    color: '#EF4444',
+    fontWeight: 'bold',
+    fontSize: 11,
+  },
+  btnVerDatos: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0F4FF',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  textoBtn: {
+    color: '#1D4ED8',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: 'white',
+    width: '100%',
+    maxWidth: 400,
+    borderRadius: 20,
+    padding: 25,
+    alignItems: 'center',
+    elevation: 10,
+  },
+  closeBtn: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+  },
+  modalBody: {
+    width: '100%',
+    alignItems: 'center',
+  },
+  modalAvatarContainer: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: '#F1F5F9',
+    marginBottom: 15,
+    overflow: 'hidden',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#2563EB',
+  },
+  modalName: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1E293B',
+    marginBottom: 10,
+  },
+  modalDivider: {
+    width: '100%',
+    height: 1,
+    backgroundColor: '#E2E8F0',
+    marginBottom: 15,
+  },
+  modalInfoRow: {
+    width: '100%',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  modalLabel: {
+    fontWeight: 'bold',
+    color: '#64748B',
+    fontSize: 14,
+  },
+  modalValue: {
+    color: '#1E293B',
+    fontSize: 14,
+    flex: 1,
+    textAlign: 'right',
+    marginLeft: 10,
+  },
 });
