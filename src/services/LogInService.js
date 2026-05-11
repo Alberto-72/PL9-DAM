@@ -1,5 +1,6 @@
 //Servicio de login y carga de datos de Odoo desde el backend Node.
 //Todas las llamadas pasan por apiClient para tener timeout y manejo de errores unificado.
+//Las URLs estan centralizadas en config/api.js para no tener IPs hardcodeadas.
 
 import { API_ENDPOINTS } from '../config/api';
 import { apiClient } from './apiClient';
@@ -21,26 +22,36 @@ export const loginToOdoo = async (username, password) => {
   }
 };
 
-// --- NUEVA FUNCIÓN PARA OBTENER ALUMNOS Y PROFESORES ---
-export const fetchOdooData = async (modelo, campos) => {
-    // Usamos tu IP actual (.248)
-    const baseUrl = 'http://10.102.6.248:3001/api'; 
-    
-    // Asignamos la ruta correcta dependiendo del modelo de Odoo
-    const endpoint = modelo === 'gestion_entrada.alumno' ? '/alumnos' : '/profesores';
+//Carga el listado de alumnos o profesores segun el modelo de Odoo solicitado.
+//
+//Uso:
+//  const alumnos = await fetchOdooData('gestion_entrada.alumno');
+//  const profes  = await fetchOdooData('gestion_entrada.profesor');
+//
+//Devuelve un array (vacio si hay error o no hay datos). Los campos vienen crudos de Odoo:
+//  alumnos:    uid, name, surname, school_year, can_bus, photo, birth_date, email
+//  profesores: uid, name, surname, email
+export const fetchOdooData = async (model) => {
+  try {
+    //Elegimos endpoint segun el modelo, ambos centralizados en config/api.js
+    const endpoint = model === 'gestion_entrada.alumno'
+      ? API_ENDPOINTS.ALUMNOS
+      : API_ENDPOINTS.PROFESORES;
 
-    try {
-        const response = await fetch(`${baseUrl}${endpoint}`);
-        const data = await response.json();
-        
-        if (data.success) {
-            return modelo === 'gestion_entrada.alumno' ? data.alumnos : data.profesores;
-        } else {
-            console.error('Error interno del servidor Node al cargar listado:', data);
-            return [];
-        }
-    } catch (error) {
-        console.error('Error de red en fetchOdooData:', error.message);
-        return [];
+    const data = await apiClient.get(endpoint);
+
+    if (!data.success) {
+      console.warn(`fetchOdooData(${model}) -> success=false`);
+      return [];
     }
+
+    //La respuesta varia segun el modelo: { alumnos: [...] } o { profesores: [...] }
+    if (model === 'gestion_entrada.alumno') {
+      return data.alumnos || [];
+    }
+    return data.profesores || [];
+  } catch (error) {
+    console.error(`Error en fetchOdooData(${model}):`, error.message);
+    return [];
+  }
 };
