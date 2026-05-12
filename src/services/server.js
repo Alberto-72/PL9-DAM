@@ -199,6 +199,48 @@ app.post('/api/importar-csv/:tipo', upload.single('archivo'), (req, res) => {
         });
 });
 
+app.get('/api/exportar-accesos', (req, res) => {
+    const odoo = new Odoo(odooConfig);
+
+    odoo.connect((err) => {
+        if (err) return res.status(500).json({ error: "Fallo conexión" });
+
+        const domain = []; 
+        const options = {
+            // Usamos los nombres exactos que vimos en tu captura de Odoo
+            fields: ['alumno_name', 'alumno_surname', 'profesor_name', 'profesor_surname', 'reg_type', 'dateTime', 'alumno_curso'],
+            order: 'dateTime desc'
+        };
+
+        odoo.execute_kw('gestion_entrada.registro', 'search_read', [domain, options], (err, registros) => {
+            if (err) {
+                console.error("❌ Error de Odoo:", err);
+                return res.status(500).json({ error: "Error de lectura", detalle: err.faultString || err });
+            }
+
+            if (!registros || registros.length === 0) {
+                return res.status(404).json({ error: "No hay datos para exportar" });
+            }
+
+            // Construimos el CSV
+            const encabezado = "Nombre,Apellidos,Tipo,Fecha y Hora,Curso,Responsable\n";
+            const filas = registros.map(r => {
+                // Si es un alumno, usamos sus campos; si es un profesor, los suyos
+                const nombre = r.alumno_name || r.profesor_name || "N/A";
+                const apellidos = r.alumno_surname || r.profesor_surname || "";
+                const curso = r.alumno_curso || "Personal";
+                const tipo = r.reg_type === 'in' ? 'Entrada' : 'Salida';
+                
+                return `"${nombre}","${apellidos}","${tipo}","${r.dateTime}","${curso}"`;
+            }).join('\n');
+
+            res.setHeader('Content-Type', 'text/csv');
+            res.setHeader('Content-Disposition', 'attachment; filename=control_accesos.csv');
+            res.status(200).send(encabezado + filas);
+        });
+    });
+});
+
 const PORT = 3001;
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`Servidor Node corriendo en http://10.102.7.2:${PORT}`); 

@@ -103,7 +103,6 @@ function MainScreen() {
   const procesarValidacion = (datosAlumno) => {
     const esAdulto = esMayorDeEdad(datosAlumno.fechaNacimiento);
     
-<<<<<<< pablo
     //Calcular minutos actuales para las comparaciones de hora
     const now = new Date();
     const hora = now.getHours();
@@ -122,25 +121,19 @@ function MainScreen() {
 
     //Si está fuera del horario restringido (antes de las 08:00 o después de las 14:00), se acepta la salida a cualquiera
     if (fueraDeHorario) {
-=======
     //Case 1: Adult (Always authorized - Green)
     if (esAdulto) {
->>>>>>> main
       setAlumno({
         ...datosAlumno,
         autorizado: true,
         estado: 'exito', //green
-<<<<<<< pablo
         mensajeEstado: 'anticipada'
-=======
         mensajeEstado: 'AUTORIZADO'
->>>>>>> main
       });
       setTabActiva(0);
       return;
     }
 
-<<<<<<< pablo
     //Si es mayor de edad:
     if (esAdulto) {
       if (esRecreo) {
@@ -165,7 +158,6 @@ function MainScreen() {
           mensajeEstado: 'anticipada'
         });
       }
-=======
     //Case 2: Minor with transport (Authorized - Yellow)
     if (datosAlumno.tieneTransporte) {
       setAlumno({
@@ -174,23 +166,19 @@ function MainScreen() {
         estado: 'precaucion', //yellow
         mensajeEstado: 'Menor de edad con permiso de transporte'
       });
->>>>>>> main
       setTabActiva(0);
       return;
     }
 
-<<<<<<< pablo
     //Si es menor: a la hora del recreo o a cualquier otra hora dentro del horario (08:00 - 14:00), no está autorizado salir salvo si va acompañado por un adulto
     Alert.alert(
       "Control de Menores",
       `El alumno ${datosAlumno.nombre} es menor de edad.\n\n¿Va acompañado de un adulto?`,
-=======
     //Case 3: Minor without transport (Needs popup check)
     //We show the alert first, then set the state based on the answer
     Alert.alert(
       "Control de Menores",
       `El alumno ${datosAlumno.nombre} es menor y NO tiene transporte.\n\n¿Va acompañado de un adulto?`,
->>>>>>> main
       [
         {
           text: "NO - Denegar",
@@ -200,11 +188,8 @@ function MainScreen() {
               ...datosAlumno,
               autorizado: false,
               estado: 'error', //red
-<<<<<<< pablo
               mensajeEstado: 'error'
-=======
               mensajeEstado: 'Salida denegada'
->>>>>>> main
             });
             setTabActiva(0);
           }
@@ -216,11 +201,8 @@ function MainScreen() {
               ...datosAlumno,
               autorizado: true,
               estado: 'precaucion', //yellow
-<<<<<<< pablo
               mensajeEstado: esRecreo ? 'recreo' : 'anticipada'
-=======
               mensajeEstado: 'Autorizado por acompañamiento de un adulto'
->>>>>>> main
             });
             setTabActiva(0);
           }
