@@ -5,7 +5,8 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import LoginScreen from '../views/auth/LoginScreen'; 
 import TeacherTabs from './TeacherTabs';
 import DirectiveTabs from './DirectiveTabs';
-import { AuthProvider } from '../context/AuthContext';   // nuevo
+import StudentDetailScreen from '../views/directive/StudentDetailScreen';
+import TeacherDetailScreen from '../views/directive/TeacherDetailScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -28,31 +29,44 @@ export default function AppNavigator() {
 
   return (
     <NavigationContainer>
-      <AuthProvider username={username} role={userRole} onLogout={handleLogout}>
-        <Stack.Navigator screenOptions={{ headerShown: false }}>
-          {userToken == null ? (
+      <Stack.Navigator screenOptions={{ headerShown: false }}>
+        {userToken == null ? (
+          <Stack.Screen 
+            name="Login" 
+            component={LoginScreen} 
+            initialParams={{ onLogin: handleLogin }}
+          />
+        ) : (
+          <>
+            {userRole === 'directiva' ? (
+              <Stack.Screen name="DirectiveApp" component={DirectiveTabs} />
+            ) : (
+              <Stack.Screen name="TeacherApp" component={TeacherTabs} />
+            )}
+            
             <Stack.Screen 
-              name="Login" 
-              component={LoginScreen} 
-              initialParams={{ onLogin: handleLogin }}
+              name="StudentDetail" 
+              component={StudentDetailScreen} 
+              options={{ 
+                headerShown: true, 
+                title: 'Detalle del Alumno',
+                headerBackTitle: 'Volver'
+              }} 
             />
-          ) : userRole === 'directiva' ? (
+
+            {/* AÑADIMOS LA PANTALLA DE PROFESORES */}
             <Stack.Screen 
-              name="DirectiveApp" 
-              component={DirectiveTabs} 
-              initialParams={{ username: username }}
-              key={`directive-${username || 'no-user'}`}
+              name="TeacherDetail" 
+              component={TeacherDetailScreen} 
+              options={{ 
+                headerShown: true, 
+                title: 'Detalle del Profesor',
+                headerBackTitle: 'Volver'
+              }} 
             />
-          ) : (
-            <Stack.Screen 
-              name="TeacherApp" 
-              component={TeacherTabs} 
-              initialParams={{ username: username }}
-              key={`teacher-${username || 'no-user'}`}
-            />
-          )}
-        </Stack.Navigator>
-      </AuthProvider>
+          </>
+        )}
+      </Stack.Navigator>
     </NavigationContainer>
   );
 }

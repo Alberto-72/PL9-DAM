@@ -14,7 +14,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.control.controlacceso",
+      "bundleIdentifier": "com.tunombre.controlacceso",
       "infoPlist": {
         "NFCReaderUsageDescription": "Necesitamos usar NFC para leer el carnet del alumno y verificar su acceso."
       }
@@ -25,7 +25,7 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.control.controlacceso",
+      "package": "com.tunombre.controlacceso",
       "permissions": [
         "android.permission.NFC"
       ]
