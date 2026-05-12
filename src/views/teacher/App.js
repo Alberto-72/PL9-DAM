@@ -7,7 +7,7 @@ import NfcManager, { NfcTech } from 'react-native-nfc-manager';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 //Base server URL
-const BASE_URL = 'http://10.102.8.22:3001';
+const BASE_URL = 'http://10.102.7.193:3001';
 //NFC verification endpoint
 const API_URL = `${BASE_URL}/api/verificar-tarjeta`;
 //Student list endpoint
@@ -115,7 +115,6 @@ function MainScreen() {
     const finRecreo = 11 * 60 + 20;    // 11:20 -> 680
     const horaTransporte = 13 * 60 + 50; // 13:50 -> 830
 
-    const fueraDeHorario = totalMinutos < inicioJornada || totalMinutos > finJornada;
     const esRecreo = totalMinutos >= inicioRecreo && totalMinutos <= finRecreo;
     const esHoraTransporte = totalMinutos >= horaTransporte;
 
@@ -248,7 +247,7 @@ function MainScreen() {
             foto: null,
             autorizado: false,
             estado: 'error',
-            mensajeEstado: 'NO REGISTRADO'
+            mensajeEstado: 'error'
           });
         }
 
@@ -370,6 +369,17 @@ function MainScreen() {
             avatarBorderColor = "#FACC15"; //Yellow
         }
 
+        // Formateo visual del texto para App.js
+        let textoVisual = alumno.mensajeEstado;
+        if (textoVisual === 'salida_antes_8') textoVisual = "Salida Antes de las 8";
+        if (textoVisual === 'salida_autorizada_anticipada') textoVisual = "Salida Autorizada Anticipada";
+        if (textoVisual === 'no_autorizado') textoVisual = "No Autorizado";
+        if (textoVisual === 'autorizado') textoVisual = "Autorizado";
+        if (textoVisual === 'recreo') textoVisual = "Salida Recreo";
+        if (textoVisual === 'transporte') textoVisual = "Salida Transporte";
+        if (textoVisual === 'anticipada') textoVisual = "Salida Anticipada";
+        if (textoVisual === 'error') textoVisual = "Incidencia";
+
         return (
           <>
             <View style={styles.tarjeta}>
@@ -394,7 +404,7 @@ function MainScreen() {
               {/*Dynamic Status badge*/}
               <View style={badgeStyle}>
                 <Ionicons name={iconName} size={24} color={iconColor} style={{ marginRight: 8 }} />
-                <Text style={textStyle}>{alumno.mensajeEstado || "ESTADO DESCONOCIDO"}</Text>
+                <Text style={textStyle}>{textoVisual || "ESTADO DESCONOCIDO"}</Text>
               </View>
             </View>
 

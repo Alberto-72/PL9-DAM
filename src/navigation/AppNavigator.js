@@ -13,10 +13,18 @@ const Stack = createNativeStackNavigator();
 export default function AppNavigator() {
   const [userToken, setUserToken] = useState(null); 
   const [userRole, setUserRole] = useState(null);
+  const [username, setUsername] = useState(null);
 
-  const handleLogin = (token, role) => {
+  const handleLogin = (token, role, username) => {
     setUserToken(token);
     setUserRole(role);
+    setUsername(username);
+  };
+
+  const handleLogout = () => {
+    setUserToken(null);
+    setUserRole(null);
+    setUsername(null);
   };
 
   return (

@@ -75,6 +75,13 @@ const StatCard = ({ title, value, trend, color = "blue" }) => (
   </View>
 );
 
+const LegendItem = ({ color, label }) => (
+  <View style={styles.legendItem}>
+    <View style={[styles.legendColor, { backgroundColor: color }]} />
+    <Text style={styles.legendLabel}>{label}</Text>
+  </View>
+);
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8FAFC' },
   content: { padding: 16 },

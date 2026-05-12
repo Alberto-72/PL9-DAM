@@ -18,7 +18,7 @@ export default function ScannerScreen({ route, navigation }) {
           if (supported) await NfcManager.start();
         }
       } catch (ex) {
-        console.warn("Error iniciando NFC:", ex)
+        console.warn("Error iniciando NFC:", ex);
       }
     }
     initNfc();
@@ -53,114 +53,134 @@ export default function ScannerScreen({ route, navigation }) {
   };
 
   const addRegister = async (uid, usr_type, mensajeEstado) => {
-      try {
-        const now = new Date();
-        const dateTime = now.toISOString().replace('T', ' ').substring(0, 19);
+    try {
+      const now = new Date();
+      const dateTime = now.toISOString().replace('T', ' ').substring(0, 19);
 
-        const response = await fetch(`${NODE_SERVER_URL}/api/register`, {
-          method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json' 
-          },
-          body: JSON.stringify({ uid, usr_type, mensajeEstado, dateTime }),
-        });
-
-        const data = await response.json();
-        if (data.success) {
-          return data.usuario; 
-        } else {
-          console.warn("Fallo al registrar:", data.message);
-          return null;
-        }
-      } catch (error) {
-        console.error("Error conectando con el servidor Node:", error);
-        return null;
-      }
+      await apiClient.post(API_ENDPOINTS.REGISTER, {
+        uid,
+        usr_type,
+        mensajeEstado,
+        dateTime,
+      });
+    } catch (error) {
+      console.error("Error saving register:", error.message);
+    }
   };
 
   const procesarValidacion = (datosAlumno) => {
     const esAdulto = esMayorDeEdad(datosAlumno.fechaNacimiento);
     
-    // Calcular minutos actuales para las comparaciones de hora
     const now = new Date();
     const hora = now.getHours();
     const minutos = now.getMinutes();
     const totalMinutos = hora * 60 + minutos;
 
-    const inicioJornada = 8 * 60; // 08:00 -> 480
-    const finJornada = 14 * 60;   // 14:00 -> 840
-    const inicioRecreo = 10 * 60 + 45; // 10:45 -> 645
-    const finRecreo = 11 * 60 + 20;    // 11:20 -> 680
-    const horaTransporte = 13 * 60 + 50; // 13:50 -> 830
+    const inicioJornada = 8 * 60;      // 08:00
+    const finJornada = 14 * 60;        // 14:00
+    const inicioRecreo = 10 * 60 + 45; // 10:45
+    const finRecreo = 11 * 60 + 20;    // 11:20
+    const horaTransporte = 13 * 60 + 50; // 13:50
 
-    const fueraDeHorario = totalMinutos < inicioJornada || totalMinutos > finJornada;
     const esRecreo = totalMinutos >= inicioRecreo && totalMinutos <= finRecreo;
     const esHoraTransporte = totalMinutos >= horaTransporte;
 
-    // Si está fuera del horario restringido (antes de las 08:00 o después de las 14:00), se acepta la salida a cualquiera
-    if (fueraDeHorario) {
-      const newStudentState = { ...datosAlumno, autorizado: true, estado: 'exito', mensajeEstado: 'anticipada' };
-      setAlumno(newStudentState);
-      addRegister(newStudentState.uid, newStudentState.usr_type, newStudentState.mensajeEstado);
-      return;
-    }
+    let mensajeEstado = 'error';
+    let displayText = 'Error';
+    let autorizado = false;
+    let estado = 'error';
 
-    // Si es mayor de edad:
-    if (esAdulto) {
-      if (esRecreo) {
-        const newStudentState = { ...datosAlumno, autorizado: true, estado: 'exito', mensajeEstado: 'recreo' };
-        setAlumno(newStudentState);
-        addRegister(newStudentState.uid, newStudentState.usr_type, newStudentState.mensajeEstado);
-      } else if (datosAlumno.tieneTransporte && esHoraTransporte) {
-        const newStudentState = { ...datosAlumno, autorizado: true, estado: 'exito', mensajeEstado: 'transporte' };
-        setAlumno(newStudentState);
-        addRegister(newStudentState.uid, newStudentState.usr_type, newStudentState.mensajeEstado);
-      } else {
-        const newStudentState = { ...datosAlumno, autorizado: true, estado: 'exito', mensajeEstado: 'anticipada' };
-        setAlumno(newStudentState);
-        addRegister(newStudentState.uid, newStudentState.usr_type, newStudentState.mensajeEstado);
-      }
-      return;
-    }
-
-    // Si es menor: a la hora del recreo o a cualquier otra hora, no está autorizado salir salvo si va acompañado
-    if (Platform.OS === 'web') {
-      const confirmado = window.confirm(`Control de Menores\n\nEl alumno ${datosAlumno.nombre} es menor de edad.\n\n¿Va acompañado de un adulto?\n(Aceptar = SÍ / Cancelar = NO)`);
-      
-      if (confirmado) {
-        const newStudentState = { ...datosAlumno, autorizado: true, estado: 'precaucion', mensajeEstado: esRecreo ? 'recreo' : 'anticipada' };
-        setAlumno(newStudentState);
-        addRegister(datosAlumno.uid, datosAlumno.usr_type, newStudentState.mensajeEstado);
-      } else {
-        const newStudentState = { ...datosAlumno, autorizado: false, estado: 'error', mensajeEstado: 'error' };
-        setAlumno(newStudentState);
-        addRegister(datosAlumno.uid, datosAlumno.usr_type, newStudentState.mensajeEstado);
-      }
-    } else {
-      Alert.alert(
-        "Control de Menores",
-        `El alumno ${datosAlumno.nombre} es menor de edad.\n\n¿Va acompañado de un adulto?`,
-        [
-          {
-            text: "NO - Denegar",
-            style: "destructive",
-            onPress: () => {
-              const newStudentState = { ...datosAlumno, autorizado: false, estado: 'error', mensajeEstado: 'error' }
-              setAlumno(newStudentState)
-              addRegister(datosAlumno.uid, datosAlumno.usr_type, newStudentState.mensajeEstado)
-            }
-          },
-          {
-            text: "SÍ - Autorizar",
-            onPress: () => {
-              const newStudentState = { ...datosAlumno, autorizado: true, estado: 'precaucion', mensajeEstado: esRecreo ? 'recreo' : 'anticipada' }
-              setAlumno(newStudentState)
-              addRegister(datosAlumno.uid, datosAlumno.usr_type, newStudentState.mensajeEstado)
-            }
+    if (totalMinutos < inicioJornada) {
+      mensajeEstado = 'salida_antes_8';
+      displayText = 'Salida Antes de las 8';
+      autorizado = true;
+      estado = 'exito';
+    } 
+    else if (totalMinutos > finJornada) {
+      mensajeEstado = 'autorizado';
+      displayText = 'Autorizado';
+      autorizado = true;
+      estado = 'exito';
+    } 
+    else {
+      if (esAdulto) {
+        if (esRecreo) {
+          mensajeEstado = 'recreo';
+          displayText = 'Recreo';
+        } else if (datosAlumno.tieneTransporte && esHoraTransporte) {
+          mensajeEstado = 'transporte';
+          displayText = 'Salida Transporte';
+        } else {
+          mensajeEstado = 'anticipada';
+          displayText = 'Salida Anticipada';
+        }
+        autorizado = true;
+        estado = 'exito';
+      } 
+      else {
+        if (Platform.OS === 'web') {
+          const confirmado = window.confirm(`Control de Menores\n\nEl alumno ${datosAlumno.nombre} es menor de edad.\n\n¿Va acompañado de un adulto?`);
+          if (confirmado) {
+            mensajeEstado = 'salida_autorizada_anticipada';
+            displayText = 'Salida Autorizada Anticipada';
+            autorizado = true;
+            estado = 'precaucion';
+          } else {
+            mensajeEstado = 'no_autorizado';
+            displayText = 'No Autorizado';
+            autorizado = false;
+            estado = 'error';
           }
-        ]
-      );
+        } else {
+          Alert.alert(
+            "Control de Menores",
+            `El alumno ${datosAlumno.nombre} es menor de edad.\n\n¿Va acompañado de un adulto?`,
+            [
+              {
+                text: "NO - Denegar",
+                style: "destructive",
+                onPress: () => {
+                  const newState = { 
+                    ...datosAlumno, 
+                    autorizado: false, 
+                    estado: 'error', 
+                    mensajeEstado: 'no_autorizado',
+                    displayText: 'No Autorizado'
+                  };
+                  setAlumno(newState);
+                  addRegister(newState.uid || 'SIN_NFC', newState.usr_type || 'alumno', 'no_autorizado');
+                }
+              },
+              {
+                text: "SÍ - Autorizar",
+                onPress: () => {
+                  const newState = { 
+                    ...datosAlumno, 
+                    autorizado: true, 
+                    estado: 'precaucion', 
+                    mensajeEstado: 'salida_autorizada_anticipada',
+                    displayText: 'Salida Autorizada Anticipada'
+                  };
+                  setAlumno(newState);
+                  addRegister(newState.uid || 'SIN_NFC', newState.usr_type || 'alumno', 'salida_autorizada_anticipada');
+                }
+              }
+            ]
+          );
+          return;
+        }
+      }
     }
+
+    const newStudentState = { 
+      ...datosAlumno, 
+      autorizado, 
+      estado, 
+      mensajeEstado,
+      displayText 
+    };
+    setAlumno(newStudentState);
+    addRegister(newStudentState.uid || 'SIN_NFC', newStudentState.usr_type || 'alumno', mensajeEstado);
   };
 
   const procesarLectorWeb = async () => {
@@ -170,21 +190,15 @@ export default function ScannerScreen({ route, navigation }) {
       setEscaneando(true);
       
       let hexOriginal = BigInt(uidWeb).toString(16).padStart(8, '0');
-      
       let byte1 = hexOriginal.substring(6, 8); 
       let byte2 = hexOriginal.substring(4, 6); 
       let byte3 = hexOriginal.substring(2, 4); 
       let byte4 = hexOriginal.substring(0, 2); 
       let hexInvertido = (byte1 + byte2 + byte3 + byte4).toUpperCase(); 
 
-      console.log(`USB Decimal: ${uidWeb} | Hex Corregido: ${hexInvertido}`);
-
-      const response = await fetch(`${NODE_SERVER_URL}/api/verificar-tarjeta`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tarjetaId: hexInvertido })
+      const data = await apiClient.post(API_ENDPOINTS.VERIFICAR_NFC, {
+        tarjetaId: hexInvertido,
       });
-      const data = await response.json();
       
       if (data.success) {
         procesarValidacion({
@@ -197,11 +211,18 @@ export default function ScannerScreen({ route, navigation }) {
           usr_type: 'alumno' 
         });
       } else {
-        setAlumno({ nombre: 'Desconocido', curso: 'UID: ' + hexInvertido, autorizado: false, estado: 'error', mensajeEstado: 'NO REGISTRADO' });
+        setAlumno({ 
+          nombre: 'Desconocido', 
+          curso: 'UID: ' + hexInvertido, 
+          autorizado: false, 
+          estado: 'error', 
+          mensajeEstado: 'error',
+          displayText: 'No Registrado' 
+        });
       }
     } catch (error) {
-      console.error(error);
-      Alert.alert("Error", "No se puede conectar con el servidor.");
+      console.error(error.message);
+      Alert.alert("Error", error.message || "No se puede conectar con el servidor.");
     } finally {
       setEscaneando(false);
       setUidWeb(''); 
@@ -217,18 +238,15 @@ export default function ScannerScreen({ route, navigation }) {
         NfcManager.requestTechnology(NfcTech.NfcA)
       );
       const tag = await NfcManager.getTag();
-      const response = await fetch(`${NODE_SERVER_URL}/api/verificar-tarjeta`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tarjetaId: tag.id })
+
+      const data = await apiClient.post(API_ENDPOINTS.VERIFICAR_NFC, {
+        tarjetaId: tag.id,
       });
-      const data = await response.json();
       
       if (data.success) {
         procesarValidacion({
           nombre: data.nombre,
           curso: data.curso || 'Sin curso asignado',
-          cursoCompleto: data.cursoCompleto,
           foto: data.foto || null,
           fechaNacimiento: data.fechaNacimiento,
           tieneTransporte: data.tieneTransporte,
@@ -236,10 +254,17 @@ export default function ScannerScreen({ route, navigation }) {
           usr_type: 'alumno'
         });
       } else {
-        setAlumno({ nombre: 'Desconocido', curso: 'UID: ' + tag.id, autorizado: false, estado: 'error', mensajeEstado: 'NO REGISTRADO', uid: tag.id, usr_type: 'alumno' });
+        setAlumno({ 
+          nombre: 'Desconocido', 
+          curso: 'UID: ' + tag.id, 
+          autorizado: false, 
+          estado: 'error', 
+          mensajeEstado: 'error',
+          displayText: 'No Registrado' 
+        });
       }
-    } catch (networkError) {
-      Alert.alert("Error", "No se puede conectar con el servidor.");
+    } catch (error) {
+      Alert.alert("Error", error.message || "No se puede conectar con el servidor.");
     } finally {
       if (NfcManager) NfcManager.cancelTechnologyRequest();
       setEscaneando(false);
@@ -288,10 +313,22 @@ export default function ScannerScreen({ route, navigation }) {
     );
   }
 
-  let badgeStyle = alumno.estado === 'error' ? styles.badgeError : alumno.estado === 'precaucion' ? styles.badgePrecaucion : styles.badgeExito;
-  let textStyle = alumno.estado === 'error' ? styles.textoError : alumno.estado === 'precaucion' ? styles.textoPrecaucion : styles.textoExito;
-  let iconName = alumno.estado === 'error' ? "close-circle" : alumno.estado === 'precaucion' ? "alert-circle" : "checkmark-circle";
-  let iconColor = alumno.estado === 'error' ? "#DC2626" : alumno.estado === 'precaucion' ? "#A16207" : "#15803D";
+  let badgeStyle = styles.badgeExito;
+  let textStyle = styles.textoExito;
+  let iconName = "checkmark-circle";
+  let iconColor = "#15803D";
+
+  if (alumno.mensajeEstado === 'no_autorizado' || alumno.mensajeEstado === 'error') {
+    badgeStyle = styles.badgeError;
+    textStyle = styles.textoError;
+    iconName = "close-circle";
+    iconColor = "#DC2626";
+  } else if (alumno.mensajeEstado === 'salida_autorizada_anticipada') {
+    badgeStyle = styles.badgePrecaucion;
+    textStyle = styles.textoPrecaucion;
+    iconName = "alert-circle";
+    iconColor = "#A16207";
+  }
 
   return (
     <View style={styles.container}>
@@ -307,7 +344,7 @@ export default function ScannerScreen({ route, navigation }) {
         <Text style={styles.cursoAlumno}>{alumno.curso}</Text>
         <View style={badgeStyle}>
           <Ionicons name={iconName} size={24} color={iconColor} style={{ marginRight: 8 }} />
-          <Text style={textStyle}>{alumno.mensajeEstado}</Text>
+          <Text style={textStyle}>{alumno.displayText || alumno.mensajeEstado}</Text>
         </View>
       </View>
       <TouchableOpacity style={styles.botonSiguiente} onPress={() => setAlumno(null)}>
@@ -319,25 +356,146 @@ export default function ScannerScreen({ route, navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F3F4F6', padding: 20, justifyContent: 'center' },
-  cajaBlanca: { backgroundColor: 'white', padding: 30, borderRadius: 20, alignItems: 'center', elevation: 5 },
-  circuloIcono: { width: 100, height: 100, borderRadius: 50, backgroundColor: '#EFF6FF', justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
-  circuloIconoActivo: { backgroundColor: '#DCFCE7' },
-  tituloVacio: { fontSize: 20, fontWeight: 'bold', color: '#1F2937', marginBottom: 10 },
-  subtituloVacio: { fontSize: 14, color: '#6B7280', textAlign: 'center', marginBottom: 30 },
-  botonGrande: { backgroundColor: '#2563EB', flexDirection: 'row', width: '100%', padding: 16, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
-  textoBotonGrande: { color: 'white', fontSize: 18, fontWeight: 'bold' },
-  tarjeta: { backgroundColor: 'white', padding: 30, borderRadius: 20, alignItems: 'center', elevation: 5, marginBottom: 20 },
-  avatar: { width: 100, height: 100, borderRadius: 50, borderWidth: 4, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F9FAFB', marginBottom: 16, overflow: 'hidden' },
-  avatarImage: { width: '100%', height: '100%', borderRadius: 50 },
-  nombreAlumno: { fontSize: 24, fontWeight: 'bold', color: '#111827', textAlign: 'center' },
-  cursoAlumno: { fontSize: 16, color: '#6B7280', marginBottom: 20 },
-  badgeExito: { flexDirection: 'row', backgroundColor: '#DCFCE7', padding: 10, borderRadius: 20, alignItems: 'center', marginBottom: 10 },
-  textoExito: { color: '#15803D', fontWeight: 'bold', fontSize: 16, textAlign: 'center' },
-  badgeError: { flexDirection: 'row', backgroundColor: '#FEF2F2', padding: 10, borderRadius: 20, alignItems: 'center', marginBottom: 10 },
-  textoError: { color: '#DC2626', fontWeight: 'bold', fontSize: 16, textAlign: 'center' },
-  badgePrecaucion: { flexDirection: 'row', backgroundColor: '#FEF9C3', padding: 10, borderRadius: 20, alignItems: 'center', marginBottom: 10 },
-  textoPrecaucion: { color: '#A16207', fontWeight: 'bold', fontSize: 14, textAlign: 'center' },
-  botonSiguiente: { backgroundColor: '#2563EB', flexDirection: 'row', width: '100%', padding: 16, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
-  textoBotonSiguiente: { color: 'white', fontSize: 18, fontWeight: 'bold' },
+  container: {
+    flex: 1,
+    backgroundColor: '#F3F4F6',
+    padding: 20,
+    justifyContent: 'center',
+  },
+  cajaBlanca: {
+    backgroundColor: 'white',
+    padding: 30,
+    borderRadius: 20,
+    alignItems: 'center',
+    elevation: 5,
+  },
+  circuloIcono: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: '#EFF6FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  circuloIconoActivo: {
+    backgroundColor: '#DCFCE7',
+  },
+  tituloVacio: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1F2937',
+    marginBottom: 10,
+  },
+  subtituloVacio: {
+    fontSize: 14,
+    color: '#6B7280',
+    textAlign: 'center',
+    marginBottom: 30,
+  },
+  botonGrande: {
+    backgroundColor: '#2563EB',
+    flexDirection: 'row',
+    width: '100%',
+    padding: 16,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  textoBotonGrande: {
+    color: 'white',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  tarjeta: {
+    backgroundColor: 'white',
+    padding: 30,
+    borderRadius: 20,
+    alignItems: 'center',
+    elevation: 5,
+    marginBottom: 20,
+  },
+  avatar: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    borderWidth: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F9FAFB',
+    marginBottom: 16,
+    overflow: 'hidden',
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 50,
+  },
+  nombreAlumno: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#111827',
+    textAlign: 'center',
+  },
+  cursoAlumno: {
+    fontSize: 16,
+    color: '#6B7280',
+    marginBottom: 20,
+  },
+  badgeExito: {
+    flexDirection: 'row',
+    backgroundColor: '#DCFCE7',
+    padding: 10,
+    borderRadius: 20,
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  textoExito: {
+    color: '#15803D',
+    fontWeight: 'bold',
+    fontSize: 16,
+    textAlign: 'center',
+  },
+  badgeError: {
+    flexDirection: 'row',
+    backgroundColor: '#FEF2F2',
+    padding: 10,
+    borderRadius: 20,
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  textoError: {
+    color: '#DC2626',
+    fontWeight: 'bold',
+    fontSize: 16,
+    textAlign: 'center',
+  },
+  badgePrecaucion: {
+    flexDirection: 'row',
+    backgroundColor: '#FEF9C3',
+    padding: 10,
+    borderRadius: 20,
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  textoPrecaucion: {
+    color: '#A16207',
+    fontWeight: 'bold',
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  botonSiguiente: {
+    backgroundColor: '#2563EB',
+    flexDirection: 'row',
+    width: '100%',
+    padding: 16,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  textoBotonSiguiente: {
+    color: 'white',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
 });

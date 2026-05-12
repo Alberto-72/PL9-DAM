@@ -7,7 +7,7 @@ import * as DocumentPicker from 'expo-document-picker';
 const API_URL = 'http://10.102.7.2:3001/api';
 
 export default function ListScreen({ route, navigation }) {
-  const { type } = route.params; 
+  const { type } = route.params;
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false); 
@@ -33,6 +33,7 @@ export default function ListScreen({ route, navigation }) {
     }
   };
 
+  //Cargamos alumnos o profesores segun el tipo recibido por params
   useEffect(() => {
     loadData();
   }, [type]);
@@ -146,7 +147,7 @@ export default function ListScreen({ route, navigation }) {
             <Text style={styles.name}>{item.name} {item.surname || ''}</Text>
             <Text style={[styles.uid, !item.uid && styles.uidMissing]}>{item.uid || 'Sin NFC'}</Text>
           </View>
-          
+
           <View style={styles.cardFooter}>
             <View style={{ flex: 1 }}>
               {type === 'alumnado' ? (

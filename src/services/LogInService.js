@@ -2,6 +2,10 @@ const NODE_SERVER_URL = 'http://10.102.7.2:3001';
 
 // Handles the login process
 
+import { API_ENDPOINTS } from '../config/api';
+import { apiClient } from './apiClient';
+
+//Login contra el backend. Devuelve el objeto usuario si tiene exito, o null si falla.
 export const loginToOdoo = async (username, password) => {
   try {
     const response = await fetch(`${NODE_SERVER_URL}/api/login`, {
