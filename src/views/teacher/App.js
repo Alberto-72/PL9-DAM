@@ -88,7 +88,7 @@ function MainScreen() {
 
   //Calculate age helper
   const esMayorDeEdad = (fechaNacimiento) => {
-    if (!fechaNacimiento) return false; //Si no hay fecha, asumimos menor por seguridad
+    if (!fechaNacimiento) return false; 
     const hoy = new Date();
     const nacimiento = new Date(fechaNacimiento);
     let edad = hoy.getFullYear() - nacimiento.getFullYear();
@@ -119,63 +119,50 @@ function MainScreen() {
     const esRecreo = totalMinutos >= inicioRecreo && totalMinutos <= finRecreo;
     const esHoraTransporte = totalMinutos >= horaTransporte;
 
-    //Si está fuera del horario restringido (antes de las 08:00 o después de las 14:00), se acepta la salida a cualquiera
+    // Si está fuera del horario restringido (antes de las 08:00 o después de las 14:00), se acepta la salida a cualquiera
     if (fueraDeHorario) {
-    //Case 1: Adult (Always authorized - Green)
-    if (esAdulto) {
       setAlumno({
         ...datosAlumno,
         autorizado: true,
-        estado: 'exito', //green
-        mensajeEstado: 'anticipada'
-        mensajeEstado: 'AUTORIZADO'
+        estado: 'exito',
+        mensajeEstado: 'Fuera de horario lectivo'
       });
       setTabActiva(0);
       return;
     }
 
-    //Si es mayor de edad:
+    // Case 1: Adult (Dentro del horario lectivo)
     if (esAdulto) {
+      let mensaje = 'anticipada';
       if (esRecreo) {
-        setAlumno({
-          ...datosAlumno,
-          autorizado: true,
-          estado: 'exito', //green
-          mensajeEstado: 'recreo'
-        });
+        mensaje = 'recreo';
       } else if (datosAlumno.tieneTransporte && esHoraTransporte) {
-        setAlumno({
-          ...datosAlumno,
-          autorizado: true,
-          estado: 'exito', //green
-          mensajeEstado: 'transporte'
-        });
-      } else {
-        setAlumno({
-          ...datosAlumno,
-          autorizado: true,
-          estado: 'exito', //green
-          mensajeEstado: 'anticipada'
-        });
+        mensaje = 'transporte';
       }
-    //Case 2: Minor with transport (Authorized - Yellow)
+      
+      setAlumno({
+        ...datosAlumno,
+        autorizado: true,
+        estado: 'exito',
+        mensajeEstado: mensaje
+      });
+      setTabActiva(0);
+      return;
+    }
+
+    // Case 2: Minor with transport
     if (datosAlumno.tieneTransporte) {
       setAlumno({
         ...datosAlumno,
         autorizado: true,
-        estado: 'precaucion', //yellow
+        estado: 'precaucion',
         mensajeEstado: 'Menor de edad con permiso de transporte'
       });
       setTabActiva(0);
       return;
     }
 
-    //Si es menor: a la hora del recreo o a cualquier otra hora dentro del horario (08:00 - 14:00), no está autorizado salir salvo si va acompañado por un adulto
-    Alert.alert(
-      "Control de Menores",
-      `El alumno ${datosAlumno.nombre} es menor de edad.\n\n¿Va acompañado de un adulto?`,
-    //Case 3: Minor without transport (Needs popup check)
-    //We show the alert first, then set the state based on the answer
+    // Case 3: Minor without transport (Needs popup check)
     Alert.alert(
       "Control de Menores",
       `El alumno ${datosAlumno.nombre} es menor y NO tiene transporte.\n\n¿Va acompañado de un adulto?`,
@@ -187,8 +174,7 @@ function MainScreen() {
              setAlumno({
               ...datosAlumno,
               autorizado: false,
-              estado: 'error', //red
-              mensajeEstado: 'error'
+              estado: 'error',
               mensajeEstado: 'Salida denegada'
             });
             setTabActiva(0);
@@ -200,8 +186,7 @@ function MainScreen() {
             setAlumno({
               ...datosAlumno,
               autorizado: true,
-              estado: 'precaucion', //yellow
-              mensajeEstado: esRecreo ? 'recreo' : 'anticipada'
+              estado: 'precaucion',
               mensajeEstado: 'Autorizado por acompañamiento de un adulto'
             });
             setTabActiva(0);
@@ -599,7 +584,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    marginTop: 20, //Added margin top as requested
+    marginTop: 20, 
     marginBottom: 12,
     elevation: 2,
     shadowColor: '#000',
