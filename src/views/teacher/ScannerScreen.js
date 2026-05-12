@@ -2,14 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, Image, StyleSheet, Alert, Platform, TextInput } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import NfcManager, { NfcTech } from 'react-native-nfc-manager';
-
-const NODE_SERVER_URL = 'http://10.102.6.247:3001'; 
+import { API_ENDPOINTS } from '../../config/api';
+import { apiClient } from '../../services/apiClient';
 
 export default function ScannerScreen({ route, navigation }) {
   const [alumno, setAlumno] = useState(null);
   const [escaneando, setEscaneando] = useState(false);
   const [uidWeb, setUidWeb] = useState('');
 
+  //Inicializa el modulo NFC al montar la pantalla. Solo en movil, no en web.
   useEffect(() => {
     async function initNfc() {
       try {
@@ -23,6 +24,7 @@ export default function ScannerScreen({ route, navigation }) {
     }
     initNfc();
 
+    //Limpieza al desmontar: cancelamos cualquier peticion NFC pendiente
     return () => {
       if (Platform.OS !== 'web' && NfcManager) {
         NfcManager.cancelTechnologyRequest().catch(() => 0);
@@ -30,6 +32,7 @@ export default function ScannerScreen({ route, navigation }) {
     };
   }, []);
 
+  //Si llega un alumno desde StudentsListScreen (busqueda manual), lo validamos automaticamente
   useEffect(() => {
     if (route.params?.studentToValidate) {
       const alumnoManual = route.params.studentToValidate;
@@ -42,6 +45,7 @@ export default function ScannerScreen({ route, navigation }) {
     }
   }, [route.params?.studentToValidate]);
 
+  //Calcula si el alumno es mayor de edad a partir de su fecha de nacimiento
   const esMayorDeEdad = (fechaNacimiento) => {
     if (!fechaNacimiento) return false;
     const hoy = new Date();
@@ -52,6 +56,7 @@ export default function ScannerScreen({ route, navigation }) {
     return edad >= 18;
   };
 
+  //Crea un registro de entrada/salida en el backend
   const addRegister = async (uid, usr_type, mensajeEstado) => {
     try {
       const now = new Date();
@@ -68,19 +73,22 @@ export default function ScannerScreen({ route, navigation }) {
     }
   };
 
+  //Logica principal de validacion: determina si el alumno puede salir y por que motivo,
+  //segun la hora actual, su edad, y si tiene transporte
   const procesarValidacion = (datosAlumno) => {
     const esAdulto = esMayorDeEdad(datosAlumno.fechaNacimiento);
-    
+
     const now = new Date();
     const hora = now.getHours();
     const minutos = now.getMinutes();
     const totalMinutos = hora * 60 + minutos;
 
-    const inicioJornada = 8 * 60;      // 08:00
-    const finJornada = 14 * 60;        // 14:00
-    const inicioRecreo = 10 * 60 + 45; // 10:45
-    const finRecreo = 11 * 60 + 20;    // 11:20
-    const horaTransporte = 13 * 60 + 50; // 13:50
+    //Franjas horarias en minutos desde medianoche
+    const inicioJornada = 8 * 60;        //08:00
+    const finJornada = 14 * 60;          //14:00
+    const inicioRecreo = 10 * 60 + 45;   //10:45
+    const finRecreo = 11 * 60 + 20;      //11:20
+    const horaTransporte = 13 * 60 + 50; //13:50
 
     const esRecreo = totalMinutos >= inicioRecreo && totalMinutos <= finRecreo;
     const esHoraTransporte = totalMinutos >= horaTransporte;
@@ -91,19 +99,23 @@ export default function ScannerScreen({ route, navigation }) {
     let estado = 'error';
 
     if (totalMinutos < inicioJornada) {
+      //Antes de las 8: salida anticipada permitida
       mensajeEstado = 'salida_antes_8';
       displayText = 'Salida Antes de las 8';
       autorizado = true;
       estado = 'exito';
-    } 
+    }
     else if (totalMinutos > finJornada) {
+      //Despues de las 14: salida normal
       mensajeEstado = 'autorizado';
       displayText = 'Autorizado';
       autorizado = true;
       estado = 'exito';
-    } 
+    }
     else {
+      //Horario lectivo (08:00 - 14:00)
       if (esAdulto) {
+        //Adultos: pueden salir libremente (con motivo: recreo, transporte o anticipada)
         if (esRecreo) {
           mensajeEstado = 'recreo';
           displayText = 'Recreo';
@@ -116,9 +128,11 @@ export default function ScannerScreen({ route, navigation }) {
         }
         autorizado = true;
         estado = 'exito';
-      } 
+      }
       else {
+        //Menores: necesitan acompanante adulto. Pedimos confirmacion al profesor.
         if (Platform.OS === 'web') {
+          //En web usamos window.confirm porque Alert.alert no funciona bien
           const confirmado = window.confirm(`Control de Menores\n\nEl alumno ${datosAlumno.nombre} es menor de edad.\n\n¿Va acompañado de un adulto?`);
           if (confirmado) {
             mensajeEstado = 'salida_autorizada_anticipada';
@@ -132,6 +146,7 @@ export default function ScannerScreen({ route, navigation }) {
             estado = 'error';
           }
         } else {
+          //En movil usamos Alert.alert nativo
           Alert.alert(
             "Control de Menores",
             `El alumno ${datosAlumno.nombre} es menor de edad.\n\n¿Va acompañado de un adulto?`,
@@ -140,10 +155,10 @@ export default function ScannerScreen({ route, navigation }) {
                 text: "NO - Denegar",
                 style: "destructive",
                 onPress: () => {
-                  const newState = { 
-                    ...datosAlumno, 
-                    autorizado: false, 
-                    estado: 'error', 
+                  const newState = {
+                    ...datosAlumno,
+                    autorizado: false,
+                    estado: 'error',
                     mensajeEstado: 'no_autorizado',
                     displayText: 'No Autorizado'
                   };
@@ -154,10 +169,10 @@ export default function ScannerScreen({ route, navigation }) {
               {
                 text: "SÍ - Autorizar",
                 onPress: () => {
-                  const newState = { 
-                    ...datosAlumno, 
-                    autorizado: true, 
-                    estado: 'precaucion', 
+                  const newState = {
+                    ...datosAlumno,
+                    autorizado: true,
+                    estado: 'precaucion',
                     mensajeEstado: 'salida_autorizada_anticipada',
                     displayText: 'Salida Autorizada Anticipada'
                   };
@@ -167,39 +182,44 @@ export default function ScannerScreen({ route, navigation }) {
               }
             ]
           );
+          //Salimos aqui porque el Alert es asincrono y maneja el estado en sus onPress
           return;
         }
       }
     }
 
-    const newStudentState = { 
-      ...datosAlumno, 
-      autorizado, 
-      estado, 
+    const newStudentState = {
+      ...datosAlumno,
+      autorizado,
+      estado,
       mensajeEstado,
-      displayText 
+      displayText
     };
     setAlumno(newStudentState);
     addRegister(newStudentState.uid || 'SIN_NFC', newStudentState.usr_type || 'alumno', mensajeEstado);
   };
 
+  //Procesa el UID leido por un lector USB en la version web
   const procesarLectorWeb = async () => {
     if (!uidWeb) return;
-    
+
     try {
       setEscaneando(true);
-      
+
+      //Los lectores USB suelen devolver el UID como numero decimal.
+      //Lo convertimos a hexadecimal e invertimos el orden de bytes (endianness) para que coincida
+      //con el formato que usa Odoo (big-endian).
       let hexOriginal = BigInt(uidWeb).toString(16).padStart(8, '0');
-      let byte1 = hexOriginal.substring(6, 8); 
-      let byte2 = hexOriginal.substring(4, 6); 
-      let byte3 = hexOriginal.substring(2, 4); 
-      let byte4 = hexOriginal.substring(0, 2); 
-      let hexInvertido = (byte1 + byte2 + byte3 + byte4).toUpperCase(); 
+      let byte1 = hexOriginal.substring(6, 8);
+      let byte2 = hexOriginal.substring(4, 6);
+      let byte3 = hexOriginal.substring(2, 4);
+      let byte4 = hexOriginal.substring(0, 2);
+      let hexInvertido = (byte1 + byte2 + byte3 + byte4).toUpperCase();
 
       const data = await apiClient.post(API_ENDPOINTS.VERIFICAR_NFC, {
         tarjetaId: hexInvertido,
       });
-      
+
       if (data.success) {
         procesarValidacion({
           nombre: data.nombre,
@@ -207,17 +227,17 @@ export default function ScannerScreen({ route, navigation }) {
           foto: data.foto || null,
           fechaNacimiento: data.fechaNacimiento,
           tieneTransporte: data.tieneTransporte,
-          uid: hexInvertido, 
-          usr_type: 'alumno' 
+          uid: hexInvertido,
+          usr_type: 'alumno'
         });
       } else {
-        setAlumno({ 
-          nombre: 'Desconocido', 
-          curso: 'UID: ' + hexInvertido, 
-          autorizado: false, 
-          estado: 'error', 
+        setAlumno({
+          nombre: 'Desconocido',
+          curso: 'UID: ' + hexInvertido,
+          autorizado: false,
+          estado: 'error',
           mensajeEstado: 'error',
-          displayText: 'No Registrado' 
+          displayText: 'No Registrado'
         });
       }
     } catch (error) {
@@ -225,15 +245,17 @@ export default function ScannerScreen({ route, navigation }) {
       Alert.alert("Error", error.message || "No se puede conectar con el servidor.");
     } finally {
       setEscaneando(false);
-      setUidWeb(''); 
+      setUidWeb('');
     }
   };
 
+  //Lectura NFC nativa (movil)
   const leerNFC = async () => {
-    if (Platform.OS === 'web') return; 
+    if (Platform.OS === 'web') return;
 
     try {
       setEscaneando(true);
+      //Probamos primero NDEF, si falla caemos a NfcA (compatibilidad mas amplia)
       await NfcManager.requestTechnology(NfcTech.Ndef).catch(() =>
         NfcManager.requestTechnology(NfcTech.NfcA)
       );
@@ -242,7 +264,7 @@ export default function ScannerScreen({ route, navigation }) {
       const data = await apiClient.post(API_ENDPOINTS.VERIFICAR_NFC, {
         tarjetaId: tag.id,
       });
-      
+
       if (data.success) {
         procesarValidacion({
           nombre: data.nombre,
@@ -254,13 +276,13 @@ export default function ScannerScreen({ route, navigation }) {
           usr_type: 'alumno'
         });
       } else {
-        setAlumno({ 
-          nombre: 'Desconocido', 
-          curso: 'UID: ' + tag.id, 
-          autorizado: false, 
-          estado: 'error', 
+        setAlumno({
+          nombre: 'Desconocido',
+          curso: 'UID: ' + tag.id,
+          autorizado: false,
+          estado: 'error',
           mensajeEstado: 'error',
-          displayText: 'No Registrado' 
+          displayText: 'No Registrado'
         });
       }
     } catch (error) {
@@ -271,6 +293,7 @@ export default function ScannerScreen({ route, navigation }) {
     }
   };
 
+  //Pantalla cuando no hay alumno cargado: muestra el boton/input para escanear
   if (!alumno) {
     return (
       <View style={styles.container}>
@@ -296,15 +319,15 @@ export default function ScannerScreen({ route, navigation }) {
               value={uidWeb}
               onChangeText={setUidWeb}
               onSubmitEditing={procesarLectorWeb}
-              autoFocus={true} 
+              autoFocus={true}
             />
           )}
 
           {escaneando && (
-            <TouchableOpacity style={[styles.botonGrande, { backgroundColor: '#EF4444' }]} onPress={() => { 
-                if (Platform.OS !== 'web' && NfcManager) NfcManager.cancelTechnologyRequest(); 
-                setEscaneando(false); 
-              }}>
+            <TouchableOpacity style={[styles.botonGrande, { backgroundColor: '#EF4444' }]} onPress={() => {
+              if (Platform.OS !== 'web' && NfcManager) NfcManager.cancelTechnologyRequest();
+              setEscaneando(false);
+            }}>
               <Text style={styles.textoBotonGrande}>Cancelar</Text>
             </TouchableOpacity>
           )}
@@ -313,6 +336,7 @@ export default function ScannerScreen({ route, navigation }) {
     );
   }
 
+  //Pantalla cuando hay un alumno validado: muestra su tarjeta con el resultado
   let badgeStyle = styles.badgeExito;
   let textStyle = styles.textoExito;
   let iconName = "checkmark-circle";

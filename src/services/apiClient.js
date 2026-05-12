@@ -1,21 +1,20 @@
-//api client: módulo centralizado para hacer peticiones a la API REST del backend.
-//Aquí se maneja el timeout, los errores de red, el parseo de JSON, etc.
-//El resto del frontend solo llama a apiClient.get/post/put/delete con la URL y los datos,
-//y este módulo se encarga de todo lo demás (incluyendo logging para depuración).
+//api client: modulo centralizado para hacer peticiones a la API REST del backend.
+//Aqui se maneja el timeout, los errores de red, el parseo de JSON, etc.
+//El resto del frontend solo llama a apiClient.get/post/put/delete con la URL y los datos.
 
 import { API_TIMEOUT } from '../config/api';
 
 /**
- * Realiza una petición HTTP con timeout y manejo de errores.
+ * Realiza una peticion HTTP con timeout y manejo de errores.
  *
  * @param {string} url - URL completa del endpoint.
  * @param {object} options - Opciones de fetch (method, body, headers...)
  * @param {number} timeout - Timeout en ms (por defecto API_TIMEOUT)
  * @returns {Promise<object>} - Cuerpo de la respuesta parseado como JSON
- * @throws {Error} - Si la petición falla, se agota el tiempo o el servidor responde con error
+ * @throws {Error} - Si la peticion falla, se agota el tiempo o el servidor responde con error
  */
 async function request(url, options = {}, timeout = API_TIMEOUT) {
-  // AbortController permite cancelar la petición si tarda demasiado
+  //AbortController permite cancelar la peticion si tarda demasiado
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeout);
 
@@ -26,24 +25,20 @@ async function request(url, options = {}, timeout = API_TIMEOUT) {
     const response = await fetch(url, {
       ...options,
       signal: controller.signal,
-      headers: {
-        'Content-Type': 'application/json',
-        ...(options.headers || {}),
-      },
     });
 
     clearTimeout(timeoutId);
 
-    //intenta parsear la respuesta como JSON, aunque el backend debería responder siempre con JSON
+    //Intenta parsear la respuesta como JSON, aunque el backend deberia responder siempre con JSON
     let data;
     try {
       data = await response.json();
     } catch (parseError) {
-      throw new Error(`Respuesta no válida del servidor (status ${response.status})`);
+      throw new Error(`Respuesta no valida del servidor (status ${response.status})`);
     }
 
     if (!response.ok) {
-      //el backend responde, pero con error HTTP (4xx, 5xx)
+      //El backend responde, pero con error HTTP (4xx, 5xx)
       const message = data?.message || `Error HTTP ${response.status}`;
       console.warn(`[API] ${method} ${url} -> ${response.status}: ${message}`);
       const error = new Error(message);
@@ -56,15 +51,15 @@ async function request(url, options = {}, timeout = API_TIMEOUT) {
   } catch (error) {
     clearTimeout(timeoutId);
 
-    //el AbortController aborta la petición por timeout
+    //El AbortController aborta la peticion por timeout
     if (error.name === 'AbortError') {
       console.error(`[API] ${method} ${url} -> TIMEOUT (${timeout}ms)`);
-      const timeoutError = new Error('El servidor no responde. Comprueba la conexión.');
+      const timeoutError = new Error('El servidor no responde. Comprueba la conexion.');
       timeoutError.isTimeout = true;
       throw timeoutError;
     }
 
-    // Error de red (servidor caído, sin WiFi, IP incorrecta...)
+    //Error de red (servidor caido, sin WiFi, IP incorrecta...)
     if (error.message === 'Network request failed' || error.message === 'Failed to fetch') {
       console.error(`[API] ${method} ${url} -> NETWORK ERROR`);
       const networkError = new Error('No se puede conectar con el servidor.');
@@ -72,33 +67,60 @@ async function request(url, options = {}, timeout = API_TIMEOUT) {
       throw networkError;
     }
 
-    //cualquier otro error ya formateado
+    //Cualquier otro error ya formateado
     console.error(`[API] ${method} ${url} -> ${error.message}`);
     throw error;
   }
 }
 
+//Helper: detecta si el cuerpo es FormData (subida de archivos multipart).
+//Si lo es, NO ponemos Content-Type (el navegador/RN lo genera con el boundary correcto)
+//y NO serializamos a JSON (FormData se pasa tal cual a fetch).
+function buildBodyOptions(body) {
+  const isFormData = typeof FormData !== 'undefined' && body instanceof FormData;
+
+  if (isFormData) {
+    return {
+      body: body,
+      headers: { 'Accept': 'application/json' },
+    };
+  }
+
+  return {
+    body: JSON.stringify(body),
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    },
+  };
+}
+
 export const apiClient = {
+
   /**
    * GET request.
-   * @param {string} url
-   * @param {object} options Opciones adicionales (headers, timeout custom...).
    */
   get(url, options = {}) {
-    return request(url, { ...options, method: 'GET' });
+    return request(url, {
+      ...options,
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+        ...(options.headers || {}),
+      },
+    });
   },
 
   /**
-   * POST request con cuerpo JSON.
-   * @param {string} url
-   * @param {object} body Datos a enviar (se serializan a JSON).
-   * @param {object} options
+   * POST request. Acepta objeto JSON o FormData (para subida de archivos).
    */
   post(url, body, options = {}) {
+    const bodyOpts = buildBodyOptions(body);
     return request(url, {
       ...options,
       method: 'POST',
-      body: JSON.stringify(body),
+      ...bodyOpts,
+      headers: { ...bodyOpts.headers, ...(options.headers || {}) },
     });
   },
 
@@ -106,10 +128,12 @@ export const apiClient = {
    * PUT request con cuerpo JSON.
    */
   put(url, body, options = {}) {
+    const bodyOpts = buildBodyOptions(body);
     return request(url, {
       ...options,
       method: 'PUT',
-      body: JSON.stringify(body),
+      ...bodyOpts,
+      headers: { ...bodyOpts.headers, ...(options.headers || {}) },
     });
   },
 
@@ -117,6 +141,13 @@ export const apiClient = {
    * DELETE request.
    */
   delete(url, options = {}) {
-    return request(url, { ...options, method: 'DELETE' });
+    return request(url, {
+      ...options,
+      method: 'DELETE',
+      headers: {
+        'Accept': 'application/json',
+        ...(options.headers || {}),
+      },
+    });
   },
 };
