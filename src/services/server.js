@@ -1,11 +1,17 @@
-console.log("🔥 ESTE ES EL SERVIDOR BUENO 🔥");
 const express = require('express');
 const cors = require('cors');
 const Odoo = require('odoo-xmlrpc');
+const multer = require('multer'); // Librería para subir archivos
+const csv = require('csv-parser'); // Librería para leer CSV
+const fs = require('fs');
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+// Configuración de Multer para archivos temporales
+const upload = multer({ dest: 'uploads/' });
 
 const odooConfig = {
     url: 'http://10.102.7.16', 
@@ -13,6 +19,13 @@ const odooConfig = {
     db: 'ControlAcceso', 
     username: 'albertoroaf@gmail.com',
     password: 'AlberPabKil123'
+};
+
+// Función auxiliar para arreglar fechas de CSV (de DD/MM/AAAA a AAAA-MM-DD)
+const formatCSVDate = (dateStr) => {
+    if (!dateStr || !dateStr.includes('/')) return dateStr;
+    const [day, month, year] = dateStr.split('/');
+    return `${year}-${month}-${day}`;
 };
 
 app.get('/', (req, res) => {
@@ -23,88 +36,170 @@ app.get('/', (req, res) => {
 app.post('/api/login', (req, res) => {
     const { username, password } = req.body;
     console.log(`\nIntento de login para: [${username}]`);
-    
     const odoo = new Odoo(odooConfig);
     odoo.connect((err) => {
-        if (err) {
-            console.error("\n⛔ ERROR DE CONEXIÓN ODOO (LOGIN):", err);
-            return res.status(500).json({ success: false, message: 'Fallo conexión Odoo' });
-        }
-        
-        const params = [
-            [['username', '=', username.trim()], ['user_pass', '=', password.trim()]],
-            ['name', 'surname', 'email', 'username', 'is_management'],
-            0, 1
-        ];
-
+        if (err) return res.status(500).json({ success: false, message: 'Fallo conexión Odoo' });
+        const params = [[['username', '=', username.trim()], ['user_pass', '=', password.trim()]], ['name', 'surname', 'email', 'username', 'is_management'], 0, 1];
         odoo.execute_kw('gestion_entrada.profesor', 'search_read', [params], (err, result) => {
-            if (err) {
-                return res.status(500).json({ success: false, message: 'Error interno en Odoo' });
-            }
+            if (err) return res.status(500).json({ success: false, message: 'Error interno en Odoo' });
             if (result && result.length > 0) {
                 const u = result[0];
-                console.log(`LOGIN EXITOSO: ${u.name}`);
-                return res.json({
-                    success: true,
-                    usuario: {
-                        id: u.id,
-                        nombre: u.name,
-                        apellidos: u.surname,
-                        role: u.is_management ? 'directiva' : 'profesor'
-                    }
-                });
+                return res.json({ success: true, usuario: { id: u.id, nombre: u.name, apellidos: u.surname, role: u.is_management ? 'directiva' : 'profesor' } });
             }
             res.status(401).json({ success: false, message: "Credenciales incorrectas" });
         });
     });
 });
 
-// --- STUDENTS ROUTE ---
+// --- LISTADOS ---
 app.get('/api/alumnos', (req, res) => {
-    console.log("Petición de lista de alumnos recibida...");
     const odoo = new Odoo(odooConfig);
     odoo.connect((err) => {
-        if (err) {
-            console.error("\n⛔ ERROR DE CONEXIÓN ODOO (ALUMNOS):", err);
-            return res.status(500).json({ success: false });
-        }
-
-        const domain = [[]]; 
-        const fields = ['uid', 'name', 'surname', 'school_year', 'can_bus', 'photo'];
-        
-        odoo.execute_kw('gestion_entrada.alumno', 'search_read', [domain, { fields: fields }], (err, result) => {
-            if (err) {
-                console.error("\n⛔ ERROR ODOO EXECUTE_KW (ALUMNOS):", err);
-                return res.status(500).json({ success: false });
-            }
+        if (err) return res.status(500).json({ success: false });
+        odoo.execute_kw('gestion_entrada.alumno', 'search_read', [[], { fields: ['uid', 'name', 'surname', 'school_year', 'can_bus', 'photo'] }], (err, result) => {
+            if (err) return res.status(500).json({ success: false });
             res.json({ success: true, alumnos: result });
         });
     });
 });
 
-// --- TEACHERS ROUTE ---
 app.get('/api/profesores', (req, res) => {
-    console.log("Petición de lista de profesores recibida...");
     const odoo = new Odoo(odooConfig);
     odoo.connect((err) => {
-        if (err) {
-            console.error("\n⛔ ERROR DE CONEXIÓN ODOO (PROFESORES):", err);
-            return res.status(500).json({ success: false });
-        }
-        const domain = [[]]; 
-        const fields = ['uid', 'name', 'surname', 'email'];
-        
-        odoo.execute_kw('gestion_entrada.profesor', 'search_read', [domain, { fields: fields }], (err, result) => {
-            if (err) {
-                console.error("\n⛔ ERROR ODOO EXECUTE_KW (PROFESORES):", err);
-                return res.status(500).json({ success: false });
-            }
+        if (err) return res.status(500).json({ success: false });
+        odoo.execute_kw('gestion_entrada.profesor', 'search_read', [[], { fields: ['uid', 'name', 'surname', 'email', 'photo'] }], (err, result) => {
+            if (err) return res.status(500).json({ success: false });
             res.json({ success: true, profesores: result });
         });
-    });j
+    });
+});
+
+// --- CRUD ALUMNOS ---
+app.post('/api/alumnos', (req, res) => {
+    const { name, surname, school_year, can_bus, photo, birth_date, email } = req.body;
+    const odoo = new Odoo(odooConfig);
+    odoo.connect((err) => {
+        if (err) return res.status(500).json({ success: false });
+        odoo.execute_kw('gestion_entrada.alumno', 'create', [[{ name, surname, school_year, can_bus, photo, birth_date, email }]], (err, result) => {
+            if (err) return res.status(500).json({ success: false, error: err });
+            res.json({ success: true, id: result });
+        });
+    });
+});
+
+app.put('/api/alumnos/:id', (req, res) => {
+    const alumnoId = parseInt(req.params.id);
+    const odoo = new Odoo(odooConfig);
+    odoo.connect((err) => {
+        if (err) return res.status(500).json({ success: false });
+        odoo.execute_kw('gestion_entrada.alumno', 'write', [[[alumnoId], req.body]], (err, result) => {
+            if (err) return res.status(500).json({ success: false, error: err });
+            res.json({ success: true });
+        });
+    });
+});
+
+app.delete('/api/alumnos/:id', (req, res) => {
+    const odoo = new Odoo(odooConfig);
+    odoo.connect((err) => {
+        if (err) return res.status(500).json({ success: false });
+        odoo.execute_kw('gestion_entrada.alumno', 'unlink', [[[parseInt(req.params.id)]]], (err, result) => {
+            if (err) return res.status(500).json({ success: false });
+            res.json({ success: true });
+        });
+    });
+});
+
+// --- REGISTROS ---
+app.get('/api/registros/:uid', (req, res) => {
+    const odoo = new Odoo(odooConfig);
+    odoo.connect((err) => {
+        if (err) return res.status(500).json({ success: false });
+        odoo.execute_kw('gestion_entrada.registro', 'search_read', [[[['uid', '=', req.params.uid]]], { fields: ['dateTime', 'reg_type', 'usr_type'], order: 'dateTime desc' }], (err, result) => {
+            if (err) return res.status(500).json({ success: false });
+            res.json({ success: true, registros: result });
+        });
+    });
+});
+
+// --- CRUD PROFESORES ---
+app.post('/api/profesores', (req, res) => {
+    const odoo = new Odoo(odooConfig);
+    odoo.connect((err) => {
+        if (err) return res.status(500).json({ success: false });
+        odoo.execute_kw('gestion_entrada.profesor', 'create', [[req.body]], (err, result) => {
+            if (err) return res.status(500).json({ success: false, error: err });
+            res.json({ success: true, id: result });
+        });
+    });
+});
+
+app.put('/api/profesores/:id', (req, res) => {
+    const profId = parseInt(req.params.id);
+    const odoo = new Odoo(odooConfig);
+    odoo.connect((err) => {
+        if (err) return res.status(500).json({ success: false });
+        odoo.execute_kw('gestion_entrada.profesor', 'write', [[[profId], req.body]], (err, result) => {
+            if (err) return res.status(500).json({ success: false, error: err });
+            res.json({ success: true });
+        });
+    });
+});
+
+app.delete('/api/profesores/:id', (req, res) => {
+    const odoo = new Odoo(odooConfig);
+    odoo.connect((err) => {
+        if (err) return res.status(500).json({ success: false });
+        odoo.execute_kw('gestion_entrada.profesor', 'unlink', [[[parseInt(req.params.id)]]], (err, result) => {
+            if (err) return res.status(500).json({ success: false });
+            res.json({ success: true });
+        });
+    });
+});
+
+// ==========================================
+// RUTA DE IMPORTACIÓN MASIVA (CSV)
+// ==========================================
+app.post('/api/importar-csv/:tipo', upload.single('archivo'), (req, res) => {
+    const tipo = req.params.tipo;
+    const model = tipo === 'alumnos' ? 'gestion_entrada.alumno' : 'gestion_entrada.profesor';
+
+    if (!req.file) return res.status(400).json({ success: false, message: "No se recibió archivo" });
+
+    const results = [];
+    fs.createReadStream(req.file.path)
+        .pipe(csv({ mapHeaders: ({ header }) => header.trim() })) 
+        .on('data', (data) => results.push(data))
+        .on('end', async () => {
+            const odoo = new Odoo(odooConfig);
+            odoo.connect(async (err) => {
+                if (err) return res.status(500).json({ success: false });
+
+                let exitos = 0;
+                for (const fila of results) {
+                    const datos = {
+                        name: fila.name?.trim(),
+                        surname: fila.surname?.trim(),
+                        email: fila.email?.trim(),
+                        school_year: fila.school_year?.trim(),
+                        birth_date: formatCSVDate(fila.birth_date?.trim()),
+                        can_bus: String(fila.can_bus).toLowerCase().includes('true')
+                    };
+                    
+                    await new Promise(resolve => {
+                        odoo.execute_kw(model, 'create', [[datos]], (err) => {
+                            if (!err) exitos++;
+                            resolve();
+                        });
+                    });
+                }
+                fs.unlinkSync(req.file.path);
+                res.json({ success: true, message: `Importados ${exitos} de ${results.length}` });
+            });
+        });
 });
 
 const PORT = 3001;
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Servidor Node corriendo en http://10.102.6.247:${PORT}`); 
+    console.log(`Servidor Node corriendo en http://10.102.7.2:${PORT}`); 
 });
