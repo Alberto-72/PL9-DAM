@@ -10,29 +10,16 @@ import {
   TextInput,
   Alert,
   Platform,
+  Modal,
+  ScrollView,
 } from 'react-native';
 import { Feather, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import { fetchOdooData } from '../../services/LogInService';
 import { API_ENDPOINTS } from '../../config/api';
 import { apiClient } from '../../services/apiClient';
-
-//Mapeo de codigo corto de curso -> texto legible para el usuario.
-//Mismo mapa que en StudentsListScreen para mantener consistencia visual.
-const MAPA_CURSOS = {
-  '1ESO': '1º ESO',
-  '2ESO': '2º ESO',
-  '3ESO': '3º ESO',
-  '4ESO': '4º ESO',
-  '1BACH': '1º Bachillerato',
-  '2BACH': '2º Bachillerato',
-  '1CFGM_SM': '1º CFGM Ciclo Medio SMYR',
-  '2CFGM_SM': '2º CFGM Ciclo Medio SMYR',
-  '1CFGS_CS_DAM': '1º CFGS Ciclo Superior DAM',
-  '2CFGS_CS_DAM': '2º CFGS Ciclo Superior DAM',
-  '1CFGS_GFMN': '1º CFGS Gestión Forestal y del Medio Natural',
-  '2CFGS_GFMN': '2º CFGS Gestión Forestal y del Medio Natural'
-};
+//Fuente unica de cursos: ver src/config/cursos.js
+import { FILTRO_TODOS, getNombreCurso } from '../../config/cursos';
 
 export default function ListScreen({ route, navigation }) {
   const { type } = route.params;
@@ -41,7 +28,9 @@ export default function ListScreen({ route, navigation }) {
   const [importing, setImporting] = useState(false);
 
   const [busqueda, setBusqueda] = useState('');
-  const [cursoFiltro, setCursoFiltro] = useState('');
+  //Filtro de curso (solo se usa para alumnado). Empieza en "Todos".
+  const [cursoFiltro, setCursoFiltro] = useState(FILTRO_TODOS);
+  const [mostrarFiltroCursos, setMostrarFiltroCursos] = useState(false);
 
   //Helper para mostrar alertas: en web usa window.alert/confirm, en movil usa Alert.alert
   const mostrarAlerta = (titulo, mensaje) => {
@@ -55,7 +44,6 @@ export default function ListScreen({ route, navigation }) {
     const model = isAlumnado ? 'gestion_entrada.alumno' : 'gestion_entrada.profesor';
 
     try {
-      //fetchOdooData solo recibe el modelo. El backend decide que campos devolver.
       const result = await fetchOdooData(model);
       setData(result);
     } catch (e) {
@@ -65,16 +53,41 @@ export default function ListScreen({ route, navigation }) {
     }
   };
 
-  //Cargamos alumnos o profesores segun el tipo recibido por params
   useEffect(() => {
     cargarDatos();
+    //Reseteamos filtros al cambiar de tipo (alumnado/profesorado)
+    setCursoFiltro(FILTRO_TODOS);
+    setBusqueda('');
   }, [type]);
+
+  //============================================
+  //LISTA DE CURSOS DISPONIBLES PARA EL FILTRO
+  //
+  //Solo mostramos cursos que tengan al menos un alumno asignado.
+  //getNombreCurso() hace el fallback al codigo corto si no esta en MAPA_CURSOS.
+  //============================================
+  const cursosDisponibles = (() => {
+    const codigos = new Set();
+    data.forEach(item => {
+      if (item.school_year) codigos.add(item.school_year);
+    });
+    return Array.from(codigos)
+      .sort()
+      .map(codigo => ({
+        codigo,
+        etiqueta: getNombreCurso(codigo),
+      }));
+  })();
+
+  //Etiqueta del filtro activo
+  const etiquetaCursoActual = cursoFiltro === FILTRO_TODOS
+    ? 'Todos los cursos'
+    : getNombreCurso(cursoFiltro);
 
   //============================================
   //IMPORTACION CSV
   //============================================
 
-  //Abre el selector de archivos para elegir un CSV
   const seleccionarCSV = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -92,14 +105,11 @@ export default function ListScreen({ route, navigation }) {
     }
   };
 
-  //Envia el archivo CSV al backend como multipart/form-data
   const importarArchivo = async (archivo) => {
     setImporting(true);
 
     const formData = new FormData();
 
-    //En web, fetch devuelve un Blob a partir de la uri del archivo seleccionado.
-    //En movil, FormData acepta directamente el objeto {uri, name, type}.
     if (Platform.OS === 'web') {
       const response = await fetch(archivo.uri);
       const blob = await response.blob();
@@ -131,30 +141,30 @@ export default function ListScreen({ route, navigation }) {
   };
 
   //============================================
-  //FILTROS
+  //FILTROS COMBINADOS
   //============================================
+  const textoBusqueda = busqueda.trim().toLowerCase();
 
   const datosFiltrados = data.filter(item => {
     const nombre = item.name ? String(item.name).toLowerCase() : '';
     const apellido = item.surname ? String(item.surname).toLowerCase() : '';
-    const curso = item.school_year ? String(item.school_year).toLowerCase() : '';
-    const coincideNombre = nombre.includes(busqueda.toLowerCase()) || apellido.includes(busqueda.toLowerCase());
-    const coincideCurso = type === 'alumnado' ? curso.includes(cursoFiltro.toLowerCase()) : true;
+    const coincideNombre = nombre.includes(textoBusqueda) || apellido.includes(textoBusqueda);
+
+    const coincideCurso = type !== 'alumnado'
+      || cursoFiltro === FILTRO_TODOS
+      || item.school_year === cursoFiltro;
+
     return coincideNombre && coincideCurso;
   });
 
   //============================================
-  //NAVEGACION A DETALLE
+  //NAVEGACION Y ACCIONES
   //============================================
 
   const irADetalle = (item) => {
     if (type === 'alumnado') navigation.navigate('StudentDetail', { student: item });
     else navigation.navigate('TeacherDetail', { teacher: item });
   };
-
-  //============================================
-  //ELIMINAR
-  //============================================
 
   const confirmarEliminacion = (item) => {
     const mensaje = `¿Estás seguro de eliminar a ${item.name}?`;
@@ -174,9 +184,13 @@ export default function ListScreen({ route, navigation }) {
         ? API_ENDPOINTS.ALUMNO_BY_ID(id)
         : API_ENDPOINTS.PROFESOR_BY_ID(id);
 
-      await apiClient.delete(endpoint);
-      //Optimistic update: quitamos el elemento localmente sin esperar a recargar todo
-      setData(prevData => prevData.filter(i => i.id !== id));
+      const resData = await apiClient.delete(endpoint);
+
+      if (resData && resData.success !== false) {
+        setData(prevData => prevData.filter(i => i.id !== id));
+      } else {
+        mostrarAlerta('Error', resData.message || 'No se pudo eliminar.');
+      }
     } catch (error) {
       console.error('Error eliminando:', error.message);
       mostrarAlerta('Error', error.message || 'No se pudo eliminar.');
@@ -184,12 +198,11 @@ export default function ListScreen({ route, navigation }) {
   };
 
   //============================================
-  //RENDER
+  //RENDER DE CADA FILA
   //============================================
 
   const renderItem = ({ item }) => {
-    //Traducimos el codigo de curso al texto legible
-    const cursoTexto = MAPA_CURSOS[item.school_year] || item.school_year || 'Sin curso';
+    const cursoTexto = getNombreCurso(item.school_year);
 
     return (
       <View style={styles.card}>
@@ -212,7 +225,7 @@ export default function ListScreen({ route, navigation }) {
               <View style={{ flex: 1 }}>
                 {type === 'alumnado' ? (
                   <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                    <Text style={styles.detailText}>{cursoTexto}</Text>
+                    <Text style={styles.detailText} numberOfLines={1}>{cursoTexto}</Text>
                     <Text style={{ marginHorizontal: 6, color: '#CBD5E1' }}>·</Text>
                     <Feather
                       name="truck"
@@ -247,7 +260,6 @@ export default function ListScreen({ route, navigation }) {
     <View style={styles.container}>
       <View style={styles.filtrosContenedor}>
 
-        {/*Fila superior: buscador + boton CSV*/}
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           <View style={[styles.buscadorInputWrapper, { flex: 1 }]}>
             <Ionicons name="search" size={20} color="#9CA3AF" style={{ marginRight: 8 }} />
@@ -273,18 +285,19 @@ export default function ListScreen({ route, navigation }) {
           </TouchableOpacity>
         </View>
 
-        {/*Filtro por curso solo aplicable a alumnado*/}
+        {/*Filtro de curso (solo en alumnado). Mismo patron que StudentsListScreen.*/}
         {type === 'alumnado' && (
-          <View style={[styles.buscadorInputWrapper, { marginTop: 8 }]}>
-            <Feather name="book" size={18} color="#9CA3AF" style={{ marginRight: 8 }} />
-            <TextInput
-              style={styles.buscadorInput}
-              placeholder="Filtrar por curso..."
-              placeholderTextColor="#9CA3AF"
-              value={cursoFiltro}
-              onChangeText={setCursoFiltro}
-            />
-          </View>
+          <TouchableOpacity
+            style={styles.filtroCurso}
+            onPress={() => setMostrarFiltroCursos(true)}
+            activeOpacity={0.7}
+          >
+            <Feather name="filter" size={16} color="#2563EB" style={{ marginRight: 6 }} />
+            <Text style={styles.filtroCursoTexto} numberOfLines={1}>
+              {etiquetaCursoActual}
+            </Text>
+            <Feather name="chevron-down" size={18} color="#2563EB" />
+          </TouchableOpacity>
         )}
       </View>
 
@@ -295,13 +308,12 @@ export default function ListScreen({ route, navigation }) {
       ) : (
         <FlatList
           data={datosFiltrados}
-          keyExtractor={(item) => (item.id || Math.random()).toString()}
+          keyExtractor={(item, index) => (item.id != null ? String(item.id) : `idx-${index}`)}
           renderItem={renderItem}
           contentContainerStyle={styles.listPadding}
         />
       )}
 
-      {/*Boton flotante para anadir nuevo alumno/profesor*/}
       {!loading && (
         <TouchableOpacity
           style={styles.fab}
@@ -314,6 +326,71 @@ export default function ListScreen({ route, navigation }) {
           <Text style={styles.fabText}>Añadir</Text>
         </TouchableOpacity>
       )}
+
+      {/*Modal del filtro de curso*/}
+      <Modal
+        animationType="fade"
+        transparent
+        visible={mostrarFiltroCursos}
+        onRequestClose={() => setMostrarFiltroCursos(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setMostrarFiltroCursos(false)}
+        >
+          <View style={styles.modalFiltro} onStartShouldSetResponder={() => true}>
+            <Text style={styles.modalFiltroTitulo}>Filtrar por curso</Text>
+            <ScrollView style={{ maxHeight: 400 }}>
+
+              <TouchableOpacity
+                style={[
+                  styles.opcionCurso,
+                  cursoFiltro === FILTRO_TODOS && styles.opcionCursoActiva
+                ]}
+                onPress={() => {
+                  setCursoFiltro(FILTRO_TODOS);
+                  setMostrarFiltroCursos(false);
+                }}
+              >
+                <Text style={[
+                  styles.opcionCursoTexto,
+                  cursoFiltro === FILTRO_TODOS && styles.opcionCursoTextoActivo
+                ]}>
+                  Todos los cursos
+                </Text>
+                {cursoFiltro === FILTRO_TODOS && (
+                  <Feather name="check" size={18} color="#2563EB" />
+                )}
+              </TouchableOpacity>
+
+              {cursosDisponibles.map(c => (
+                <TouchableOpacity
+                  key={c.codigo}
+                  style={[
+                    styles.opcionCurso,
+                    cursoFiltro === c.codigo && styles.opcionCursoActiva
+                  ]}
+                  onPress={() => {
+                    setCursoFiltro(c.codigo);
+                    setMostrarFiltroCursos(false);
+                  }}
+                >
+                  <Text style={[
+                    styles.opcionCursoTexto,
+                    cursoFiltro === c.codigo && styles.opcionCursoTextoActivo
+                  ]}>
+                    {c.etiqueta}
+                  </Text>
+                  {cursoFiltro === c.codigo && (
+                    <Feather name="check" size={18} color="#2563EB" />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -357,6 +434,26 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     width: 50,
+  },
+  filtroCurso: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#DBEAFE',
+    borderRadius: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginTop: 8,
+    maxWidth: '100%',
+  },
+  filtroCursoTexto: {
+    color: '#2563EB',
+    fontWeight: '700',
+    fontSize: 13,
+    marginRight: 6,
+    maxWidth: 220,
   },
   listPadding: {
     padding: 16,
@@ -423,6 +520,7 @@ const styles = StyleSheet.create({
   detailText: {
     fontSize: 12,
     color: '#64748B',
+    flexShrink: 1,
   },
   btnIconoVerde: {
     backgroundColor: '#ECFDF5',
@@ -453,5 +551,48 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginLeft: 8,
     fontSize: 16,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalFiltro: {
+    width: '100%',
+    maxWidth: 400,
+    backgroundColor: 'white',
+    borderRadius: 20,
+    padding: 20,
+  },
+  modalFiltroTitulo: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#111827',
+    marginBottom: 14,
+  },
+  opcionCurso: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    marginBottom: 6,
+  },
+  opcionCursoActiva: {
+    backgroundColor: '#EFF6FF',
+  },
+  opcionCursoTexto: {
+    color: '#374151',
+    fontSize: 14,
+    fontWeight: '500',
+    flex: 1,
+    marginRight: 8,
+  },
+  opcionCursoTextoActivo: {
+    color: '#2563EB',
+    fontWeight: '700',
   },
 });
