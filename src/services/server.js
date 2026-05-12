@@ -336,7 +336,9 @@ app.get('/api/dashboard', (req, res) => {
 
                     //KPIs de hoy
                     if (recordDateStr === hoyStr) {
-                        if (record.reg_type === 'entrada_puntual') asistenciaHoy++;
+                        //BUG FIX: contar los 3 tipos de entrada (puntual, recreo, tardia)
+                        //antes solo se contaba entrada_puntual, infracontando la asistencia real
+                        if (['entrada_puntual', 'entrada_recreo', 'entrada_tardia'].includes(record.reg_type)) asistenciaHoy++;
                         if (['error', 'no_autorizado'].includes(record.reg_type)) incidenciasHoy++;
                     }
 
@@ -362,6 +364,206 @@ app.get('/api/dashboard', (req, res) => {
 
                 res.json({ success: true, kpis: { asistenciaHoy, incidenciasHoy, asistenciaMedia: `${asistenciaMedia}%` }, chartData });
             });
+        });
+    });
+});
+
+//============================================
+//REGISTROS PAGINADOS PARA EL DASHBOARD DE DIRECTIVA
+//
+//Devuelve los registros del modelo gestion_entrada.registro filtrados por:
+//  - tipo: "entrada" o "salida" (mapea internamente a los reg_type de Odoo)
+//  - fecha: YYYY-MM-DD, devuelve registros entre 00:00:00 y 23:59:59 de ese dia
+//  - curso: codigo corto (1ESO, 1DAM...). Filtra solo los registros cuyo UID
+//           pertenece a un alumno de ese curso. Si esta presente, los registros
+//           de profesores no aparecen (los profesores no tienen curso).
+//  - limit / offset: paginacion. Default limit=50.
+//
+//Devuelve tambien total para que el frontend sepa si quedan mas paginas.
+//Enriquece cada registro con datos del alumno/profesor (nombre, apellidos, curso)
+//haciendo una sola query agrupando los UIDs unicos de la pagina.
+//============================================
+
+//Mapeo de tipos logicos -> reg_type de Odoo
+const REG_TYPES_ENTRADA = ['entrada_puntual', 'entrada_recreo', 'entrada_tardia'];
+const REG_TYPES_SALIDA  = ['salida_antes_8', 'recreo', 'anticipada', 'transporte',
+                           'autorizado', 'no_autorizado', 'salida_autorizada_anticipada', 'error'];
+
+app.get('/api/registros-paginado', (req, res) => {
+    const tipo   = String(req.query.tipo || '').toLowerCase();
+    const fecha  = String(req.query.fecha || '').trim();
+    const curso  = req.query.curso ? String(req.query.curso).trim() : null;
+    const limit  = Math.min(parseInt(req.query.limit, 10) || 50, 200);
+    const offset = parseInt(req.query.offset, 10) || 0;
+
+    //Validacion
+    if (!['entrada', 'salida'].includes(tipo)) {
+        return res.status(400).json({ success: false, message: 'tipo debe ser entrada o salida' });
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
+        return res.status(400).json({ success: false, message: 'fecha invalida, formato YYYY-MM-DD' });
+    }
+
+    const regTypes = tipo === 'entrada' ? REG_TYPES_ENTRADA : REG_TYPES_SALIDA;
+    const fechaInicio = `${fecha} 00:00:00`;
+    const fechaFin    = `${fecha} 23:59:59`;
+
+    const odoo = new Odoo(odooConfig);
+    odoo.connect((errConn) => {
+        if (errConn) {
+            console.error('Error de conexion con Odoo:', errConn);
+            return res.status(500).json({ success: false, message: 'Fallo conexion Odoo' });
+        }
+
+        //PASO 1: si hay filtro de curso, primero obtenemos los UIDs de los alumnos
+        //de ese curso. Si no hay filtro, saltamos directamente al PASO 2.
+        const obtenerUidsCurso = (callback) => {
+            if (!curso) return callback(null, null); //null = sin restriccion de UIDs
+
+            odoo.execute_kw(
+                'gestion_entrada.alumno',
+                'search_read',
+                [[[['school_year', '=', curso]]], { fields: ['uid'] }],
+                (err, alumnos) => {
+                    if (err) return callback(err);
+                    //Extraemos UIDs validos (descartamos los false/null/vacio)
+                    const uids = (alumnos || [])
+                        .map(a => a.uid)
+                        .filter(u => u && u !== false);
+                    callback(null, uids);
+                }
+            );
+        };
+
+        obtenerUidsCurso((errUids, uidsCurso) => {
+            if (errUids) {
+                console.error('Error obteniendo UIDs del curso:', errUids);
+                return res.status(500).json({ success: false, message: 'Error filtrando por curso' });
+            }
+
+            //Si el filtro de curso no devuelve ningun UID, no hay registros que mostrar.
+            //Devolvemos respuesta vacia rapida sin hacer mas queries.
+            if (uidsCurso !== null && uidsCurso.length === 0) {
+                return res.json({ success: true, registros: [], total: 0, offset, limit });
+            }
+
+            //PASO 2: construir el dominio de busqueda de registros
+            //Odoo usa notacion polaca prefija para AND/OR. Por defecto los criterios se
+            //combinan con AND, asi que no necesitamos operadores explicitos.
+            const domain = [
+                ['dateTime', '>=', fechaInicio],
+                ['dateTime', '<=', fechaFin],
+                ['reg_type', 'in', regTypes],
+            ];
+            if (uidsCurso !== null) {
+                domain.push(['uid', 'in', uidsCurso]);
+            }
+
+            //PASO 3: contar total para saber si quedan mas paginas
+            odoo.execute_kw(
+                'gestion_entrada.registro',
+                'search_count',
+                [domain],
+                (errCount, total) => {
+                    if (errCount) {
+                        console.error('Error contando registros:', errCount);
+                        return res.status(500).json({ success: false, message: 'Error contando registros' });
+                    }
+
+                    //PASO 4: leer la pagina actual ordenada por fecha descendente
+                    odoo.execute_kw(
+                        'gestion_entrada.registro',
+                        'search_read',
+                        [
+                            [domain],
+                            {
+                                fields: ['uid', 'usr_type', 'reg_type', 'dateTime'],
+                                order: 'dateTime desc',
+                                limit,
+                                offset,
+                            }
+                        ],
+                        (errReg, registros) => {
+                            if (errReg) {
+                                console.error('Error leyendo registros:', errReg);
+                                return res.status(500).json({ success: false, message: 'Error leyendo registros' });
+                            }
+
+                            registros = registros || [];
+
+                            //PASO 5: enriquecer con datos del alumno/profesor
+                            //Sacamos UIDs unicos de los registros para hacer 2 queries
+                            //(una a alumno, otra a profesor) en vez de una por registro.
+                            const uidsAlumno   = [...new Set(registros.filter(r => r.usr_type === 'alumno').map(r => r.uid).filter(Boolean))];
+                            const uidsProfesor = [...new Set(registros.filter(r => r.usr_type === 'profesor').map(r => r.uid).filter(Boolean))];
+
+                            const queries = [];
+
+                            if (uidsAlumno.length > 0) {
+                                queries.push(new Promise((resolve) => {
+                                    odoo.execute_kw(
+                                        'gestion_entrada.alumno',
+                                        'search_read',
+                                        [[[['uid', 'in', uidsAlumno]]], { fields: ['uid', 'name', 'surname', 'school_year', 'photo'] }],
+                                        (e, r) => resolve(e ? [] : (r || []))
+                                    );
+                                }));
+                            } else {
+                                queries.push(Promise.resolve([]));
+                            }
+
+                            if (uidsProfesor.length > 0) {
+                                queries.push(new Promise((resolve) => {
+                                    odoo.execute_kw(
+                                        'gestion_entrada.profesor',
+                                        'search_read',
+                                        [[[['uid', 'in', uidsProfesor]]], { fields: ['uid', 'name', 'surname', 'photo'] }],
+                                        (e, r) => resolve(e ? [] : (r || []))
+                                    );
+                                }));
+                            } else {
+                                queries.push(Promise.resolve([]));
+                            }
+
+                            Promise.all(queries).then(([alumnos, profesores]) => {
+                                //Indexamos por UID para lookup rapido
+                                const indiceAlumnos = {};
+                                alumnos.forEach(a => { indiceAlumnos[a.uid] = a; });
+                                const indiceProfesores = {};
+                                profesores.forEach(p => { indiceProfesores[p.uid] = p; });
+
+                                //Componemos la respuesta final
+                                const enriquecidos = registros.map(r => {
+                                    const persona = r.usr_type === 'alumno'
+                                        ? indiceAlumnos[r.uid]
+                                        : indiceProfesores[r.uid];
+
+                                    return {
+                                        id: r.id,
+                                        uid: r.uid,
+                                        usr_type: r.usr_type,
+                                        reg_type: r.reg_type,
+                                        dateTime: r.dateTime,
+                                        //Datos de la persona (null si el UID no existe en alumnos/profesores)
+                                        nombre:      persona ? `${persona.name || ''} ${persona.surname || ''}`.trim() : 'Desconocido',
+                                        curso:       (persona && persona.school_year) ? persona.school_year : null,
+                                        cursoLargo:  (persona && persona.school_year) ? getNombreCurso(persona.school_year) : null,
+                                        photo:       persona ? (persona.photo || null) : null,
+                                    };
+                                });
+
+                                return res.json({
+                                    success: true,
+                                    registros: enriquecidos,
+                                    total,
+                                    offset,
+                                    limit,
+                                });
+                            });
+                        }
+                    );
+                }
+            );
         });
     });
 });
