@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,55 +11,71 @@ import {
   Image,
   Modal,
   ScrollView,
+  Alert,
 } from 'react-native';
 import { Feather, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { API_ENDPOINTS, API_BASE_URL } from '../../config/api';
 import { apiClient } from '../../services/apiClient';
 import { FILTRO_TODOS, getNombreCurso } from '../../config/cursos';
 
-//Tamano de pagina al pedir registros al backend
 const PAGE_SIZE = 50;
 
 //Etiquetas legibles para cada reg_type. Coinciden con la seleccion definida
-//en el modelo gestion_entrada.registro de Odoo (campo reg_type).
+//en el modelo gestion_entrada.registro de Odoo (actualizado).
 const ETIQUETAS_REG_TYPE = {
+  //Entradas
   entrada_puntual:              'Entrada Puntual',
   entrada_recreo:               'Entrada Recreo',
   entrada_tardia:               'Entrada Tardia',
-  salida_antes_8:               'Salida Antes de las 8',
-  recreo:                       'Salida Recreo',
-  anticipada:                   'Salida Anticipada',
-  transporte:                   'Salida Transporte',
-  autorizado:                   'Autorizado',
-  no_autorizado:                'No Autorizado',
-  salida_autorizada_anticipada: 'Salida Autorizada Anticipada',
+  entrada_prof:                 'Entrada Profesor',
+  //Salidas
+  salida_anticipada:            'Salida Anticipada',
+  salida_recreo:                'Salida Recreo',
+  salida_bus:                   'Salida Bus',
+  salida_anticipada_autorizada: 'Salida Anticipada Autorizada',
+  salida_regular:               'Salida Regular',
+  salida_prof:                  'Salida Profesor',
+  //Incidencias
   error:                        'Incidencia',
+  no_autorizado:                'No Autorizado',
 };
 
-//Colores por reg_type para el badge de cada fila. Ordenados de exito a problema:
-//verde = OK, ambar = precaucion, rojo = problema
+//Colores por reg_type. Verde = OK, ambar = atencion, rojo = problema, azul = neutro
 const COLORES_REG_TYPE = {
+  //Entradas: verde si puntual, ambar si tardia
   entrada_puntual:              { bg: '#DCFCE7', fg: '#15803D' },
   entrada_recreo:               { bg: '#DCFCE7', fg: '#15803D' },
   entrada_tardia:               { bg: '#FEF9C3', fg: '#A16207' },
-  autorizado:                   { bg: '#DCFCE7', fg: '#15803D' },
-  salida_antes_8:               { bg: '#DBEAFE', fg: '#1D4ED8' },
-  recreo:                       { bg: '#DBEAFE', fg: '#1D4ED8' },
-  transporte:                   { bg: '#DBEAFE', fg: '#1D4ED8' },
-  anticipada:                   { bg: '#FEF9C3', fg: '#A16207' },
-  salida_autorizada_anticipada: { bg: '#FEF9C3', fg: '#A16207' },
+  entrada_prof:                 { bg: '#E0E7FF', fg: '#3730A3' },
+  //Salidas regulares (azul/verde)
+  salida_regular:               { bg: '#DCFCE7', fg: '#15803D' },
+  salida_bus:                   { bg: '#DBEAFE', fg: '#1D4ED8' },
+  salida_recreo:                { bg: '#DBEAFE', fg: '#1D4ED8' },
+  salida_prof:                  { bg: '#E0E7FF', fg: '#3730A3' },
+  //Salidas anticipadas: ambar si autorizada, rojo si no
+  salida_anticipada_autorizada: { bg: '#FEF9C3', fg: '#A16207' },
+  salida_anticipada:            { bg: '#FEF9C3', fg: '#A16207' },
+  //Incidencias
   no_autorizado:                { bg: '#FEE2E2', fg: '#B91C1C' },
   error:                        { bg: '#FEE2E2', fg: '#B91C1C' },
 };
 
-//Convierte "2026-05-12 09:30:15" a "09:30" para mostrar
+//Odoo guarda dateTime en UTC con formato "YYYY-MM-DD HH:MM:SS".
+//Lo convertimos a hora local del navegador para que coincida con lo que muestra
+//la vista web de Odoo (en Canarias UTC+1 en horario de verano, UTC+0 en invierno).
 function formatearHora(dateTime) {
   if (!dateTime) return '';
-  const parte = String(dateTime).split(' ')[1] || '';
-  return parte.substring(0, 5);
+  //El formato de Odoo no incluye zona horaria, asi que indicamos explicitamente
+  //que es UTC poniendo el sufijo 'Z'. Si no lo hacemos, JavaScript lo interpreta
+  //como hora local y la conversion sale mal.
+  const fechaUTC = new Date(String(dateTime).replace(' ', 'T') + 'Z');
+  if (isNaN(fechaUTC.getTime())) return '';
+  //toLocaleTimeString respeta la zona horaria del dispositivo
+  const hh = String(fechaUTC.getHours()).padStart(2, '0');
+  const mm = String(fechaUTC.getMinutes()).padStart(2, '0');
+  return `${hh}:${mm}`;
 }
 
-//Devuelve la fecha de hoy en formato YYYY-MM-DD (lo que espera el endpoint)
 function fechaHoy() {
   const hoy = new Date();
   const y = hoy.getFullYear();
@@ -68,7 +84,6 @@ function fechaHoy() {
   return `${y}-${m}-${d}`;
 }
 
-//Convierte YYYY-MM-DD a "12/05/2026" para mostrar en el boton
 function formatearFechaParaApp(yyyymmdd) {
   if (!yyyymmdd) return '';
   const [y, m, d] = yyyymmdd.split('-');
@@ -76,9 +91,7 @@ function formatearFechaParaApp(yyyymmdd) {
 }
 
 export default function DashboardScreen() {
-  //============================================
-  //ESTADO: KPIs y grafico (parte fija arriba)
-  //============================================
+  //KPIs y grafico
   const [loadingKpis, setLoadingKpis] = useState(true);
   const [kpis, setKpis] = useState({
     asistenciaHoy: 0,
@@ -87,29 +100,22 @@ export default function DashboardScreen() {
   });
   const [chartData, setChartData] = useState([]);
 
-  //============================================
-  //ESTADO: tablas (selector + filtros + datos)
-  //============================================
-  //Tabla activa: 'entrada' o 'salida'. Solo una visible a la vez para que no
-  //choque el scroll infinito de dos FlatList apiladas.
+  //Estado de las tablas
   const [tipoActivo, setTipoActivo] = useState('entrada');
-
-  //Filtros (compartidos entre las dos tablas, se aplican al cambiar tab)
   const [fecha, setFecha] = useState(fechaHoy());
   const [cursoFiltro, setCursoFiltro] = useState(FILTRO_TODOS);
   const [mostrarFiltroCursos, setMostrarFiltroCursos] = useState(false);
 
-  //Datos paginados por tipo. Mantenemos las dos en estado para no recargar
-  //cuando el usuario cambia entre tabs.
   const [registros, setRegistros] = useState({ entrada: [], salida: [] });
   const [totales, setTotales]     = useState({ entrada: 0, salida: 0 });
-  const [offsets, setOffsets]     = useState({ entrada: 0, salida: 0 });
   const [cargando, setCargando]   = useState({ entrada: false, salida: false });
-  const [cursosVistos, setCursosVistos] = useState(new Set()); //para el modal de filtro
+  const [cursosVistos, setCursosVistos] = useState(new Set());
 
-  //============================================
-  //CARGA DE KPIs (al montar y cuando se actualiza)
-  //============================================
+  //Refs para control interno sin disparar re-renders (fix bucle infinito)
+  const offsetsRef = useRef({ entrada: 0, salida: 0 });
+  const cargandoRef = useRef({ entrada: false, salida: false });
+  const fetchTokenRef = useRef(0);
+
   const cargarKpis = useCallback(async () => {
     try {
       const data = await apiClient.get(API_ENDPOINTS.DASHBOARD);
@@ -128,25 +134,17 @@ export default function DashboardScreen() {
     cargarKpis();
   }, [cargarKpis]);
 
-  //============================================
-  //CARGA DE REGISTROS (con filtros y paginacion)
-  //
-  //"reset" = si true, descarta lo que habia y empieza desde offset 0.
-  //         Si false, anade al final (siguiente pagina).
-  //============================================
+  //Carga de registros estable (no se invalida al cambiar estado de datos)
   const cargarRegistros = useCallback(async (tipo, reset = false) => {
-    if (cargando[tipo]) return; //ya hay una peticion en marcha, no duplicamos
+    if (cargandoRef.current[tipo]) return;
 
-    const offsetActual = reset ? 0 : offsets[tipo];
-    const yaEnPantalla = reset ? 0 : registros[tipo].length;
+    const offsetActual = reset ? 0 : offsetsRef.current[tipo];
+    const miToken = fetchTokenRef.current;
 
-    //Si no es reset, comprobamos que no hayamos alcanzado el total
-    if (!reset && yaEnPantalla >= totales[tipo] && totales[tipo] > 0) return;
-
+    cargandoRef.current[tipo] = true;
     setCargando(prev => ({ ...prev, [tipo]: true }));
 
     try {
-      //Construimos query string manualmente. Solo anadimos curso si no es "todos"
       const params = new URLSearchParams({
         tipo,
         fecha,
@@ -160,88 +158,117 @@ export default function DashboardScreen() {
       const url = `${API_BASE_URL}/api/registros-paginado?${params.toString()}`;
       const data = await apiClient.get(url);
 
-      if (data.success) {
+      //Descartamos si el token cambio mientras estabamos en vuelo
+      if (miToken !== fetchTokenRef.current) return;
+
+      if (data && data.success) {
         const nuevos = data.registros || [];
+        offsetsRef.current[tipo] = offsetActual + nuevos.length;
+
         setRegistros(prev => ({
           ...prev,
           [tipo]: reset ? nuevos : [...prev[tipo], ...nuevos],
         }));
         setTotales(prev => ({ ...prev, [tipo]: data.total || 0 }));
-        setOffsets(prev => ({ ...prev, [tipo]: offsetActual + nuevos.length }));
 
-        //Vamos acumulando cursos vistos para el modal de filtro
-        //(asi se va completando segun el usuario navega)
-        setCursosVistos(prev => {
-          const nuevo = new Set(prev);
-          nuevos.forEach(r => { if (r.curso) nuevo.add(r.curso); });
-          return nuevo;
-        });
+        if (nuevos.length > 0) {
+          setCursosVistos(prev => {
+            const nuevo = new Set(prev);
+            nuevos.forEach(r => { if (r.curso) nuevo.add(r.curso); });
+            if (nuevo.size === prev.size) return prev;
+            return nuevo;
+          });
+        }
       }
     } catch (error) {
       console.error(`Error cargando registros (${tipo}):`, error.message);
     } finally {
+      cargandoRef.current[tipo] = false;
       setCargando(prev => ({ ...prev, [tipo]: false }));
     }
-  }, [fecha, cursoFiltro, offsets, registros, totales, cargando]);
+  }, [fecha, cursoFiltro]);
 
-  //============================================
-  //EFECTOS DE RECARGA
-  //
-  //Al cambiar fecha o filtro de curso, reseteamos ambas tablas a offset 0.
-  //Al cambiar de tab, cargamos esa tabla si esta vacia.
-  //============================================
+  //Cambio de fecha o curso: invalidamos el token, reseteamos datos y recargamos
   useEffect(() => {
-    //Reset de ambas tablas cuando cambian fecha o curso
+    fetchTokenRef.current += 1;
+    offsetsRef.current = { entrada: 0, salida: 0 };
     setRegistros({ entrada: [], salida: [] });
     setTotales({ entrada: 0, salida: 0 });
-    setOffsets({ entrada: 0, salida: 0 });
-    //Cargamos solo la tabla activa, la otra se cargara al cambiar de tab
     cargarRegistros(tipoActivo, true);
     //eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fecha, cursoFiltro]);
 
+  //Cambio de tab: si la tabla nueva esta vacia, la cargamos
   useEffect(() => {
-    //Si entramos a un tab sin datos, lo cargamos
-    if (registros[tipoActivo].length === 0 && !cargando[tipoActivo]) {
+    if (registros[tipoActivo].length === 0 && !cargandoRef.current[tipoActivo]) {
       cargarRegistros(tipoActivo, true);
     }
     //eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tipoActivo]);
 
+  const cargarSiguientePagina = useCallback(() => {
+    const enPantalla = registros[tipoActivo].length;
+    const total = totales[tipoActivo];
+    if (cargandoRef.current[tipoActivo]) return;
+    if (enPantalla === 0) return;
+    if (enPantalla >= total) return;
+    cargarRegistros(tipoActivo, false);
+  }, [tipoActivo, registros, totales, cargarRegistros]);
+
   //============================================
-  //EXPORTAR CSV (igual que antes)
+  //AUTO-REFRESH cada 10 segundos
+  //
+  //IMPORTANTE: no incluimos cargarRegistros directamente en el array de dependencias
+  //del setInterval porque la funcion cambia cada vez que cambia fecha/cursoFiltro,
+  //y eso reiniciaria el timer. En lugar de eso, guardamos la version mas reciente
+  //en un ref y la leemos al disparar el interval.
+  //
+  //Tiene que estar DESPUES de cargarRegistros y cargarKpis para no chocar con la
+  //"temporal dead zone" de const en JS.
   //============================================
+  const cargarRegistrosRef = useRef(cargarRegistros);
+  const cargarKpisRef = useRef(cargarKpis);
+  useEffect(() => {
+    cargarRegistrosRef.current = cargarRegistros;
+    cargarKpisRef.current = cargarKpis;
+  }, [cargarRegistros, cargarKpis]);
+
+  useEffect(() => {
+    //Refresca cada 10 segundos en background. 10s es un equilibrio entre
+    //responsividad y no saturar Odoo con peticiones constantes.
+    const id = setInterval(() => {
+      cargarKpisRef.current();
+      //Solo refresca el tab activo. El inactivo se refrescara cuando se abra.
+      cargarRegistrosRef.current(tipoActivo, true);
+    }, 10000);
+    return () => clearInterval(id);
+  }, [tipoActivo]);
+
+  //Refresco manual al pulsar el boton "Actualizar"
+  const refrescarManual = useCallback(() => {
+    cargarKpisRef.current();
+    cargarRegistrosRef.current(tipoActivo, true);
+  }, [tipoActivo]);
+
   const handleExportar = () => {
     const url = API_ENDPOINTS.EXPORTAR_ACCESOS;
     if (Platform.OS === 'web') window.open(url, '_blank');
     else Linking.openURL(url).catch(err => console.error('Error al abrir URL:', err.message));
   };
 
-  //============================================
-  //CAMBIAR FECHA
-  //
-  //RN no trae date picker propio. Implementamos lo mas portable: input nativo
-  //type="date" en web, prompt en movil. Para algo mejor en movil, instalar
-  //@react-native-community/datetimepicker (no esta en package.json ahora).
-  //============================================
   const cambiarFecha = () => {
     if (Platform.OS === 'web') {
-      //En web pedimos al usuario que escriba la fecha en formato ISO
       const nueva = window.prompt('Fecha (YYYY-MM-DD):', fecha);
       if (nueva && /^\d{4}-\d{2}-\d{2}$/.test(nueva)) setFecha(nueva);
     } else {
-      //En movil, ofrecemos opciones rapidas (hoy, ayer, anteayer) + entrada manual
-      //como solucion temporal sin libreria externa.
       const hoy = new Date();
       const ayer = new Date(); ayer.setDate(hoy.getDate() - 1);
       const anteayer = new Date(); anteayer.setDate(hoy.getDate() - 2);
       const fmt = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 
-      //Para mantener la dependencia minima, usamos un Alert nativo con 3 opciones
-      const { Alert } = require('react-native');
       Alert.alert(
         'Seleccionar fecha',
-        'Elige una fecha rapida o vuelve atras para mantener la actual',
+        'Elige una fecha rapida',
         [
           { text: 'Hoy', onPress: () => setFecha(fmt(hoy)) },
           { text: 'Ayer', onPress: () => setFecha(fmt(ayer)) },
@@ -252,13 +279,9 @@ export default function DashboardScreen() {
     }
   };
 
-  //============================================
-  //RENDER DE UNA FILA DE REGISTRO
-  //============================================
   const renderRegistro = ({ item }) => {
     const color = COLORES_REG_TYPE[item.reg_type] || { bg: '#F1F5F9', fg: '#475569' };
     const etiqueta = ETIQUETAS_REG_TYPE[item.reg_type] || item.reg_type;
-    //Si es alumno mostramos el curso largo; si es profesor, el rol
     const subtitulo = item.usr_type === 'alumno'
       ? (item.cursoLargo || 'Sin curso')
       : 'Profesor';
@@ -290,12 +313,8 @@ export default function DashboardScreen() {
     );
   };
 
-  //============================================
-  //HEADER DE LA LISTA (KPIs + grafico + filtros + selector)
-  //============================================
   const renderHeader = () => (
     <View>
-      {/*Tarjetas de KPIs*/}
       {loadingKpis ? (
         <View style={{ paddingVertical: 20 }}>
           <ActivityIndicator size="large" color="#1D4ED8" />
@@ -308,7 +327,6 @@ export default function DashboardScreen() {
         </View>
       )}
 
-      {/*Grafico semanal*/}
       {!loadingKpis && (
         <View style={styles.card}>
           <View style={styles.cardHeader}>
@@ -336,14 +354,13 @@ export default function DashboardScreen() {
           </View>
 
           <View style={styles.legendContainer}>
-            <LegendItem color="#3B82F6" label="Autorizadas" />
-            <LegendItem color="#EF4444" label="No Autoriz." />
-            <LegendItem color="#10B981" label="Transp/Recreo" />
+            <LegendItem color="#3B82F6" label="Regulares" />
+            <LegendItem color="#EF4444" label="Anticipadas" />
+            <LegendItem color="#10B981" label="Bus/Recreo" />
           </View>
         </View>
       )}
 
-      {/*Selector Entradas/Salidas*/}
       <View style={styles.tabsContainer}>
         <TouchableOpacity
           style={[styles.tabBoton, tipoActivo === 'entrada' && styles.tabBotonActivo]}
@@ -368,7 +385,6 @@ export default function DashboardScreen() {
         </TouchableOpacity>
       </View>
 
-      {/*Filtros: fecha + curso*/}
       <View style={styles.filtrosFila}>
         <TouchableOpacity style={styles.filtroBoton} onPress={cambiarFecha} activeOpacity={0.7}>
           <Feather name="calendar" size={14} color="#2563EB" style={{ marginRight: 6 }} />
@@ -390,14 +406,30 @@ export default function DashboardScreen() {
         </TouchableOpacity>
       </View>
 
-      {/*Titulo de la tabla activa*/}
-      <Text style={styles.tituloTabla}>
-        {tipoActivo === 'entrada' ? 'Registros de Entrada' : 'Registros de Salida'}
-      </Text>
+      <View style={styles.headerTabla}>
+        <Text style={styles.tituloTabla}>
+          {tipoActivo === 'entrada' ? 'Registros de Entrada' : 'Registros de Salida'}
+        </Text>
+        <TouchableOpacity
+          style={styles.btnRefresh}
+          onPress={refrescarManual}
+          activeOpacity={0.7}
+          //Indicacion visual de que esta cargando ahora mismo
+          disabled={cargando[tipoActivo]}
+        >
+          <Feather
+            name="refresh-cw"
+            size={14}
+            color={cargando[tipoActivo] ? '#94A3B8' : '#2563EB'}
+          />
+          <Text style={[styles.btnRefreshTexto, cargando[tipoActivo] && { color: '#94A3B8' }]}>
+            Actualizar
+          </Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 
-  //Footer: spinner cuando esta cargando mas, mensaje cuando se acabo
   const renderFooter = () => {
     if (cargando[tipoActivo]) {
       return (
@@ -413,7 +445,6 @@ export default function DashboardScreen() {
     return null;
   };
 
-  //Estado vacio cuando no hay registros tras filtrar
   const renderEmpty = () => {
     if (cargando[tipoActivo] && registros[tipoActivo].length === 0) return null;
     return (
@@ -426,8 +457,6 @@ export default function DashboardScreen() {
     );
   };
 
-  //Lista de cursos vistos en los registros, para el modal de filtro.
-  //Se va completando segun cargamos paginas (no requerimos una lista fija)
   const cursosParaFiltro = Array.from(cursosVistos)
     .sort()
     .map(codigo => ({ codigo, etiqueta: getNombreCurso(codigo) }));
@@ -441,19 +470,16 @@ export default function DashboardScreen() {
         ListHeaderComponent={renderHeader}
         ListFooterComponent={renderFooter}
         ListEmptyComponent={renderEmpty}
-        //Scroll infinito: cuando estamos al 70% del final, pedimos siguiente pagina
-        onEndReached={() => cargarRegistros(tipoActivo, false)}
-        onEndReachedThreshold={0.3}
+        onEndReached={cargarSiguientePagina}
+        onEndReachedThreshold={0.1}
         contentContainerStyle={styles.content}
       />
 
-      {/*FAB de exportacion CSV*/}
       <TouchableOpacity style={styles.fab} onPress={handleExportar} activeOpacity={0.8}>
         <MaterialCommunityIcons name="file-export" size={20} color="white" />
         <Text style={styles.fabText}>Exportar CSV</Text>
       </TouchableOpacity>
 
-      {/*Modal de seleccion de curso para el filtro*/}
       <Modal
         animationType="fade"
         transparent
@@ -527,9 +553,6 @@ export default function DashboardScreen() {
   );
 }
 
-//============================================
-//COMPONENTES AUXILIARES
-//============================================
 const StatCard = ({ title, value, color = 'blue' }) => (
   <View style={styles.statCard}>
     <Text style={styles.statTitle}>{title}</Text>
@@ -545,315 +568,76 @@ const LegendItem = ({ color, label }) => (
 );
 
 const styles = StyleSheet.create({
-  content: {
-    padding: 16,
-    paddingBottom: 100, //espacio para que el FAB no tape el final
-  },
-
-  //KPIs
-  statsContainer: {
+  content: { padding: 16, paddingBottom: 100 },
+  statsContainer: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 16 },
+  statCard: { flex: 1, backgroundColor: 'white', padding: 12, borderRadius: 16, marginHorizontal: 4, elevation: 2 },
+  statTitle: { fontSize: 9, fontWeight: 'bold', color: '#94A3B8', textTransform: 'uppercase', marginBottom: 8 },
+  statValue: { fontSize: 20, fontWeight: '900', color: '#1E293B' },
+  card: { backgroundColor: 'white', padding: 20, borderRadius: 16, elevation: 2, marginBottom: 16 },
+  cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 24 },
+  cardTitle: { fontSize: 14, fontWeight: 'bold', color: '#334155' },
+  chartContainer: { flexDirection: 'row', justifyContent: 'space-around', height: 150, alignItems: 'flex-end', paddingBottom: 10 },
+  barWrapper: { alignItems: 'center', flex: 1 },
+  barBackground: { width: 30, height: 120, backgroundColor: '#F1F5F9', borderRadius: 6, justifyContent: 'flex-end', overflow: 'hidden', marginBottom: 8 },
+  barFillSegment: { width: '100%' },
+  barLabel: { fontSize: 12, fontWeight: 'bold', color: '#94A3B8' },
+  legendContainer: { flexDirection: 'row', justifyContent: 'center', marginTop: 15, flexWrap: 'wrap' },
+  legendItem: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 8, marginTop: 4 },
+  legendColor: { width: 12, height: 12, borderRadius: 3, marginRight: 4 },
+  legendLabel: { fontSize: 11, color: '#64748B' },
+  tabsContainer: { flexDirection: 'row', backgroundColor: '#F1F5F9', borderRadius: 12, padding: 4, marginBottom: 12 },
+  tabBoton: { flex: 1, flexDirection: 'row', paddingVertical: 10, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  tabBotonActivo: { backgroundColor: '#1D4ED8', elevation: 2 },
+  tabTexto: { fontSize: 13, fontWeight: '600', color: '#475569' },
+  tabTextoActivo: { color: 'white', fontWeight: '700' },
+  filtrosFila: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+  filtroBoton: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#EFF6FF', borderWidth: 1, borderColor: '#DBEAFE', borderRadius: 10, paddingVertical: 8, paddingHorizontal: 12 },
+  filtroTexto: { color: '#2563EB', fontWeight: '700', fontSize: 12, marginRight: 4, flexShrink: 1 },
+  tituloTabla: { fontSize: 13, fontWeight: '700', color: '#1E293B' },
+  headerTabla: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 16,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: 'white',
-    padding: 12,
-    borderRadius: 16,
-    marginHorizontal: 4,
-    elevation: 2,
-  },
-  statTitle: {
-    fontSize: 9,
-    fontWeight: 'bold',
-    color: '#94A3B8',
-    textTransform: 'uppercase',
+    alignItems: 'center',
     marginBottom: 8,
-  },
-  statValue: {
-    fontSize: 20,
-    fontWeight: '900',
-    color: '#1E293B',
-  },
-
-  //Grafico
-  card: {
-    backgroundColor: 'white',
-    padding: 20,
-    borderRadius: 16,
-    elevation: 2,
-    marginBottom: 16,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  cardTitle: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#334155',
-  },
-  chartContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    height: 150,
-    alignItems: 'flex-end',
-    paddingBottom: 10,
-  },
-  barWrapper: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  barBackground: {
-    width: 30,
-    height: 120,
-    backgroundColor: '#F1F5F9',
-    borderRadius: 6,
-    justifyContent: 'flex-end',
-    overflow: 'hidden',
-    marginBottom: 8,
-  },
-  barFillSegment: {
-    width: '100%',
-  },
-  barLabel: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    color: '#94A3B8',
-  },
-  legendContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginTop: 15,
-    flexWrap: 'wrap',
-  },
-  legendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginHorizontal: 8,
     marginTop: 4,
   },
-  legendColor: {
-    width: 12,
-    height: 12,
-    borderRadius: 3,
-    marginRight: 4,
-  },
-  legendLabel: {
-    fontSize: 11,
-    color: '#64748B',
-  },
-
-  //Tabs Entradas/Salidas
-  tabsContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#F1F5F9',
-    borderRadius: 12,
-    padding: 4,
-    marginBottom: 12,
-  },
-  tabBoton: {
-    flex: 1,
-    flexDirection: 'row',
-    paddingVertical: 10,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  tabBotonActivo: {
-    backgroundColor: '#1D4ED8',
-    elevation: 2,
-  },
-  tabTexto: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#475569',
-  },
-  tabTextoActivo: {
-    color: 'white',
-    fontWeight: '700',
-  },
-
-  //Filtros (fecha + curso)
-  filtrosFila: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  filtroBoton: {
+  btnRefresh: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#EFF6FF',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
     borderWidth: 1,
     borderColor: '#DBEAFE',
-    borderRadius: 10,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
   },
-  filtroTexto: {
+  btnRefreshTexto: {
     color: '#2563EB',
     fontWeight: '700',
-    fontSize: 12,
-    marginRight: 4,
-    flexShrink: 1,
-  },
-
-  //Titulo encima de la tabla
-  tituloTabla: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#1E293B',
-    marginBottom: 8,
-    marginTop: 4,
-  },
-
-  //Fila de registro
-  fila: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'white',
-    padding: 12,
-    borderRadius: 12,
-    marginBottom: 8,
-    elevation: 1,
-  },
-  filaAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#F1F5F9',
-    marginRight: 12,
-    overflow: 'hidden',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  filaFoto: {
-    width: '100%',
-    height: '100%',
-  },
-  filaInfo: {
-    flex: 1,
-    marginRight: 8,
-  },
-  filaNombre: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#1E293B',
-  },
-  filaSub: {
     fontSize: 11,
-    color: '#64748B',
-    marginTop: 2,
+    marginLeft: 6,
   },
-  filaDerecha: {
-    alignItems: 'flex-end',
-  },
-  filaHora: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#1D4ED8',
-    marginBottom: 4,
-  },
-  badge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-    maxWidth: 140,
-  },
-  badgeTexto: {
-    fontSize: 10,
-    fontWeight: '800',
-  },
-
-  //Lista vacia y fin de lista
-  listaVacia: {
-    alignItems: 'center',
-    paddingVertical: 40,
-  },
-  listaVaciaTexto: {
-    color: '#94A3B8',
-    fontWeight: '600',
-    marginTop: 10,
-    textAlign: 'center',
-  },
-  finLista: {
-    textAlign: 'center',
-    color: '#94A3B8',
-    fontSize: 12,
-    paddingVertical: 16,
-  },
-
-  //FAB de exportar CSV
-  fab: {
-    position: 'absolute',
-    right: 20,
-    bottom: 20,
-    backgroundColor: '#1D4ED8',
-    flexDirection: 'row',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 30,
-    alignItems: 'center',
-    elevation: 4,
-  },
-  fabText: {
-    color: 'white',
-    fontWeight: 'bold',
-    fontSize: 14,
-    marginLeft: 8,
-  },
-
-  //Modal de filtro de cursos (mismos estilos que ListScreen/StudentsListScreen)
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  modalFiltro: {
-    width: '100%',
-    maxWidth: 400,
-    backgroundColor: 'white',
-    borderRadius: 20,
-    padding: 20,
-  },
-  modalFiltroTitulo: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#111827',
-    marginBottom: 14,
-  },
-  opcionCurso: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderRadius: 12,
-    marginBottom: 6,
-  },
-  opcionCursoActiva: {
-    backgroundColor: '#EFF6FF',
-  },
-  opcionCursoTexto: {
-    color: '#374151',
-    fontSize: 14,
-    fontWeight: '500',
-    flex: 1,
-    marginRight: 8,
-  },
-  opcionCursoTextoActivo: {
-    color: '#2563EB',
-    fontWeight: '700',
-  },
-  sinCursos: {
-    color: '#94A3B8',
-    fontSize: 12,
-    textAlign: 'center',
-    fontStyle: 'italic',
-    paddingVertical: 12,
-  },
+  fila: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', padding: 12, borderRadius: 12, marginBottom: 8, elevation: 1 },
+  filaAvatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#F1F5F9', marginRight: 12, overflow: 'hidden', justifyContent: 'center', alignItems: 'center' },
+  filaFoto: { width: '100%', height: '100%' },
+  filaInfo: { flex: 1, marginRight: 8 },
+  filaNombre: { fontSize: 14, fontWeight: '700', color: '#1E293B' },
+  filaSub: { fontSize: 11, color: '#64748B', marginTop: 2 },
+  filaDerecha: { alignItems: 'flex-end' },
+  filaHora: { fontSize: 13, fontWeight: '700', color: '#1D4ED8', marginBottom: 4 },
+  badge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, maxWidth: 140 },
+  badgeTexto: { fontSize: 10, fontWeight: '800' },
+  listaVacia: { alignItems: 'center', paddingVertical: 40 },
+  listaVaciaTexto: { color: '#94A3B8', fontWeight: '600', marginTop: 10, textAlign: 'center' },
+  finLista: { textAlign: 'center', color: '#94A3B8', fontSize: 12, paddingVertical: 16 },
+  fab: { position: 'absolute', right: 20, bottom: 20, backgroundColor: '#1D4ED8', flexDirection: 'row', paddingVertical: 12, paddingHorizontal: 20, borderRadius: 30, alignItems: 'center', elevation: 4 },
+  fabText: { color: 'white', fontWeight: 'bold', fontSize: 14, marginLeft: 8 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  modalFiltro: { width: '100%', maxWidth: 400, backgroundColor: 'white', borderRadius: 20, padding: 20 },
+  modalFiltroTitulo: { fontSize: 16, fontWeight: 'bold', color: '#111827', marginBottom: 14 },
+  opcionCurso: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12, paddingHorizontal: 14, borderRadius: 12, marginBottom: 6 },
+  opcionCursoActiva: { backgroundColor: '#EFF6FF' },
+  opcionCursoTexto: { color: '#374151', fontSize: 14, fontWeight: '500', flex: 1, marginRight: 8 },
+  opcionCursoTextoActivo: { color: '#2563EB', fontWeight: '700' },
+  sinCursos: { color: '#94A3B8', fontSize: 12, textAlign: 'center', fontStyle: 'italic', paddingVertical: 12 },
 });

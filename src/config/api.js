@@ -3,7 +3,7 @@
 //Si cambias de red o de servidor, cambia SOLO este archivo.
 
 //Configuracion del servidor Node
-const SERVER_HOST = '10.102.6.248';
+const SERVER_HOST = '10.102.6.220';
 const SERVER_PORT = 3001;
 
 export const API_BASE_URL = `http://${SERVER_HOST}:${SERVER_PORT}`;
