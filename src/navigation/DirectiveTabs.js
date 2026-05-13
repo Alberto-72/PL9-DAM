@@ -5,16 +5,16 @@ import { Feather } from '@expo/vector-icons';
 import DashboardScreen from '../views/directive/DashboardScreen';
 import ListScreen from '../views/directive/ListScreen';
 import NFCBindingScreen from '../views/directive/NFCBindingScreen';
-import GuardiaStack from './GuardiaStack'; 
+import GuardiaStack from './GuardiaStack';
 
 const Tab = createBottomTabNavigator();
 
 export default function DirectiveTabs() {
   return (
-    <Tab.Navigator 
+    <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: true,
-        headerStyle: { backgroundColor: '#1D4ED8' }, 
+        headerStyle: { backgroundColor: '#1D4ED8' },
         headerTintColor: '#fff',
         headerTitleStyle: { fontWeight: 'bold' },
         tabBarActiveTintColor: '#1D4ED8',
@@ -25,8 +25,8 @@ export default function DirectiveTabs() {
           else if (route.name === 'Alumnado') iconName = 'users';
           else if (route.name === 'Profesores') iconName = 'user';
           else if (route.name === 'NFC') iconName = 'link';
-          else if (route.name === 'Control') iconName = 'shield'; 
-          
+          else if (route.name === 'Control') iconName = 'shield';
+
           return <Feather name={iconName} size={size} color={color} />;
         },
       })}
@@ -36,12 +36,12 @@ export default function DirectiveTabs() {
       <Tab.Screen name="Profesores" component={ListScreen} initialParams={{ type: 'profesorado' }} />
       <Tab.Screen name="NFC" component={NFCBindingScreen} options={{ title: 'Vincular NFC' }} />
 
-      <Tab.Screen 
-        name="Control" 
-        component={GuardiaStack} 
-        options={{ 
-          headerShown: false, 
-          tabBarLabel: 'Profesorado de Guardia', 
+      <Tab.Screen
+        name="Control"
+        component={GuardiaStack}
+        options={{
+          headerShown: false,
+          tabBarLabel: 'Guardia',
         }}
       />
     </Tab.Navigator>

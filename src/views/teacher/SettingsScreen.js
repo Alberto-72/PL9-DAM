@@ -12,14 +12,12 @@ export default function SettingsScreen() {
   const [userData, setUserData] = useState(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
 
+  const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loadingPassword, setLoadingPassword] = useState(false);
 
-  console.log('DEBUG SettingsScreen - username desde contexto global:', username);
-
   useEffect(() => {
-    console.log('DEBUG SettingsScreen - useEffect triggered con username:', username);
     if (username && username !== 'null' && username !== 'undefined' && username.trim() !== '') {
       fetchUserProfile();
     } else {
@@ -29,30 +27,20 @@ export default function SettingsScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      console.log('DEBUG SettingsScreen - pestaña Ajustes enfocada, username:', username);
       if (username && username !== 'null' && username !== 'undefined' && username.trim() !== '') {
         fetchUserProfile();
       }
-      return () => {
-        console.log('DEBUG SettingsScreen - pestaña Ajustes desenfocada');
-      };
     }, [username])
   );
 
   const fetchUserProfile = async () => {
     if (!username || username === 'null' || username === 'undefined' || username.trim() === '') {
-      console.log('DEBUG SettingsScreen - username inválido, saltando petición al servidor');
       setLoadingProfile(false);
       return;
     }
 
-    console.log(`DEBUG SettingsScreen - Iniciando fetchUserProfile para username: ${username}`);
-
     try {
       const data = await apiClient.get(API_ENDPOINTS.USER_PROFILE(username));
-      
-      console.log('DEBUG SettingsScreen - Respuesta completa del servidor /api/user:', data);
-
       if (data.success) {
         setUserData(data.user);
       } else {
@@ -65,19 +53,37 @@ export default function SettingsScreen() {
     }
   };
 
+  const mostrarMensaje = (titulo, mensaje) => {
+    if (Platform.OS === 'web') {
+      window.alert(`${titulo}\n\n${mensaje}`);
+    } else {
+      Alert.alert(titulo, mensaje);
+    }
+  };
+
   const handleChangePassword = async () => {
-    if (!newPassword.trim() || !confirmPassword.trim()) {
-      Alert.alert('Error', 'Por favor, rellena ambos campos.');
+    if (!currentPassword.trim() || !newPassword.trim() || !confirmPassword.trim()) {
+      mostrarMensaje('Error', 'Por favor, rellena los tres campos.');
       return;
     }
 
     if (newPassword !== confirmPassword) {
-      Alert.alert('Error', 'Las contraseñas no coinciden.');
+      mostrarMensaje('Error', 'Las contraseñas nuevas no coinciden.');
+      return;
+    }
+
+    if (newPassword.length < 4) {
+      mostrarMensaje('Error', 'La contraseña nueva debe tener al menos 4 caracteres.');
+      return;
+    }
+
+    if (currentPassword === newPassword) {
+      mostrarMensaje('Error', 'La nueva contraseña debe ser distinta de la actual.');
       return;
     }
 
     if (!username) {
-      Alert.alert('Error', 'No se ha encontrado el nombre de usuario.');
+      mostrarMensaje('Error', 'No se ha encontrado el nombre de usuario.');
       return;
     }
 
@@ -86,19 +92,21 @@ export default function SettingsScreen() {
     try {
       const data = await apiClient.post(API_ENDPOINTS.CHANGE_PASSWORD, {
         username,
+        currentPassword,
         newPassword,
       });
 
-      if (data.success) {
-        Alert.alert('Éxito', 'La contraseña se ha actualizado correctamente.');
+      if (data && data.success) {
+        mostrarMensaje('Éxito', 'La contraseña se ha actualizado correctamente.');
+        setCurrentPassword('');
         setNewPassword('');
         setConfirmPassword('');
       } else {
-        Alert.alert('Error', data.message || 'No se pudo actualizar la contraseña.');
+        mostrarMensaje('Error', data?.message || 'No se pudo actualizar la contraseña.');
       }
     } catch (error) {
-      console.error(error.message);
-      Alert.alert('Error', error.message || 'Error al conectar con el servidor.');
+      const msg = error?.response?.data?.message || error?.message || 'Error al conectar con el servidor.';
+      mostrarMensaje('Error', msg);
     } finally {
       setLoadingPassword(false);
     }
@@ -116,7 +124,7 @@ export default function SettingsScreen() {
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        
+
         <View style={styles.header}>
           <View style={styles.iconContainer}>
             <Feather name="settings" size={32} color="white" />
@@ -127,13 +135,13 @@ export default function SettingsScreen() {
         {userData ? (
           <View style={styles.profileCard}>
             <View style={styles.profileHeader}>
-               <View style={styles.avatarCircle}>
-                 <Ionicons name="person" size={36} color="#1D4ED8" />
-               </View>
-               <View style={styles.profileNameContainer}>
-                 <Text style={styles.profileName}>{userData.nombre} {userData.apellidos}</Text>
-                 <Text style={styles.profileUsername}>@{userData.username}</Text>
-               </View>
+              <View style={styles.avatarCircle}>
+                <Ionicons name="person" size={36} color="#1D4ED8" />
+              </View>
+              <View style={styles.profileNameContainer}>
+                <Text style={styles.profileName}>{userData.nombre} {userData.apellidos}</Text>
+                <Text style={styles.profileUsername}>@{userData.username}</Text>
+              </View>
             </View>
 
             <View style={styles.profileInfoRow}>
@@ -162,9 +170,24 @@ export default function SettingsScreen() {
 
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Cambiar Contraseña</Text>
-          
+
           <View style={styles.inputWrapper}>
             <Feather name="lock" size={18} color="#CBD5E1" style={styles.inputIcon} />
+            <TextInput
+              style={styles.input}
+              placeholder="Contraseña actual"
+              placeholderTextColor="#94A3B8"
+              secureTextEntry
+              value={currentPassword}
+              onChangeText={setCurrentPassword}
+              editable={!loadingPassword}
+              autoCapitalize="none"
+              textContentType="password"
+            />
+          </View>
+
+          <View style={styles.inputWrapper}>
+            <Feather name="key" size={18} color="#CBD5E1" style={styles.inputIcon} />
             <TextInput
               style={styles.input}
               placeholder="Nueva contraseña"
@@ -174,6 +197,7 @@ export default function SettingsScreen() {
               onChangeText={setNewPassword}
               editable={!loadingPassword}
               autoCapitalize="none"
+              textContentType="newPassword"
             />
           </View>
 
@@ -181,18 +205,19 @@ export default function SettingsScreen() {
             <Feather name="check-circle" size={18} color="#CBD5E1" style={styles.inputIcon} />
             <TextInput
               style={styles.input}
-              placeholder="Confirmar contraseña"
+              placeholder="Confirmar nueva contraseña"
               placeholderTextColor="#94A3B8"
               secureTextEntry
               value={confirmPassword}
               onChangeText={setConfirmPassword}
               editable={!loadingPassword}
               autoCapitalize="none"
+              textContentType="newPassword"
             />
           </View>
 
-          <TouchableOpacity 
-            style={[styles.button, loadingPassword && styles.buttonDisabled]} 
+          <TouchableOpacity
+            style={[styles.button, loadingPassword && styles.buttonDisabled]}
             onPress={handleChangePassword}
             disabled={loadingPassword}
           >

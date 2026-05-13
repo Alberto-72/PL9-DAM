@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, Image, StyleSheet, Alert, Platform, TextInput, Modal } from 'react-native';
+import { View, Text, TouchableOpacity, Image, StyleSheet, Alert, Platform, TextInput, Modal, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import NfcManager, { NfcTech } from 'react-native-nfc-manager';
 import { API_ENDPOINTS, API_BASE_URL } from '../../config/api';
 import { apiClient } from '../../services/apiClient';
+import { useAuth } from '../../context/AuthContext';
 
 //============================================
 //CONSTANTES DE HORARIOS DEL CENTRO
@@ -17,7 +18,7 @@ const HORARIO = {
   finRecreo:         11 * 60 + 15,   //11:15
   inicioBus:         13 * 60 + 50,   //13:50
   finJornada:        14 * 60,        //14:00 (salida regular)
-  finVentanaRegular: 14 * 60 + 15,   //14:15 - despues -> salida_anticipada
+  finVentanaRegular: 14 * 60 + 15,   //14:15
 };
 
 //============================================
@@ -45,7 +46,7 @@ const ETIQUETAS = {
   [REG_TYPE.ENTRADA_PROF]:                  'Entrada Profesor',
   [REG_TYPE.SALIDA_ANTICIPADA]:             'Salida Anticipada',
   [REG_TYPE.SALIDA_RECREO]:                 'Salida Recreo',
-  [REG_TYPE.SALIDA_BUS]:                    'Salida Bus',
+  [REG_TYPE.SALIDA_BUS]:                    'Salida Transporte',
   [REG_TYPE.SALIDA_ANTICIPADA_AUTORIZADA]:  'Salida Anticipada Autorizada',
   [REG_TYPE.SALIDA_REGULAR]:                'Salida Regular',
   [REG_TYPE.SALIDA_PROF]:                   'Salida Profesor',
@@ -85,6 +86,10 @@ function esMayorDeEdad(fechaNacimiento) {
 //COMPONENTE PRINCIPAL
 //============================================
 export default function ScannerScreen({ route, navigation }) {
+  //Username del profesor logueado en el movil. Lo necesitamos para que el backend
+  //registre quien opera el escaneo en el campo profesor_id (operador, no escaneado).
+  const { username: operadorUsername } = useAuth();
+
   const [alumno, setAlumno] = useState(null);
   const [escaneando, setEscaneando] = useState(false);
   const [uidWeb, setUidWeb] = useState('');
@@ -96,6 +101,19 @@ export default function ScannerScreen({ route, navigation }) {
   // - 'forzar_salida' : proxima pasada sera tratada como salida
   const [modoManual, setModoManual] = useState(null);
   const [modalManualVisible, setModalManualVisible] = useState(false);
+
+  const [modoBinding, setModoBinding] = useState(null);
+  const [bindingMensaje, setBindingMensaje] = useState(null);
+
+  useEffect(() => {
+    if (route.params?.usuarioAVincular) {
+      setModoBinding(route.params.usuarioAVincular);
+      setAlumno(null);
+      setBindingMensaje(null);
+      navigation.setParams({ usuarioAVincular: undefined });
+    }
+    //eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route.params?.usuarioAVincular]);
 
   //Inicializa NFC al montar
   useEffect(() => {
@@ -136,6 +154,15 @@ export default function ScannerScreen({ route, navigation }) {
   //LLAMADAS AL BACKEND
   //============================================
 
+  //Manda el registro al backend.
+  //
+  //origen_lector: el backend usa este campo para decidir quien firma como profesor_id:
+  //  - 'usb'   -> el operador es 'lectornfc' (lector anonimo, no sabemos quien lo usa)
+  //  - 'movil' -> el operador es el usuario logueado en la app (operador_username)
+  //
+  //operador_username: solo se usa cuando origen_lector === 'movil'. Es el username del
+  //profesor logueado en este movil. El backend busca su id en Odoo y lo pone como
+  //profesor_id del registro (cuando se ha escaneado un alumno).
   const addRegister = async (uid, usr_type, reg_type) => {
     try {
       const now = new Date();
@@ -144,6 +171,8 @@ export default function ScannerScreen({ route, navigation }) {
         uid, usr_type,
         mensajeEstado: reg_type,
         dateTime,
+        origen_lector: Platform.OS === 'web' ? 'usb' : 'movil',
+        operador_username: operadorUsername || null,
       });
     } catch (error) {
       console.error("Error saving register:", error.message);
@@ -222,28 +251,37 @@ export default function ScannerScreen({ route, navigation }) {
       return { tipo: 'auto', regType, estado: 'exito' };
     }
 
-    //CASO 4: Despues de 14:15 -> salida anticipada (clase ya termino)
+    //CASO 4: Despues de 14:15 -> salida regular (igual que dentro de la ventana).
+    //Decision del centro: cualquier salida desde las 14:00 en adelante se considera
+    //salida regular, sin distincion de "ventana de gracia". Aunque salgan a las 18:00,
+    //sigue siendo una salida normal del centro.
     if (minutos >= HORARIO.finVentanaRegular) {
-      return { tipo: 'auto', regType: REG_TYPE.SALIDA_ANTICIPADA, estado: 'precaucion' };
+      return { tipo: 'auto', regType: REG_TYPE.SALIDA_REGULAR, estado: 'exito' };
     }
 
     //CASO 5: Franjas intermedias (8:05-10:45 y 11:15-13:50)
     //
-    //Logica automatica (Opcion B): consultamos historial del dia.
-    //  - Si NO tiene registros hoy -> es entrada_tardia (acaba de llegar)
-    //  - Si YA tiene registros hoy -> es salida (esta saliendo despues de haber entrado)
+    //Logica de alternancia por paridad (igual que profesores y recreo):
+    //  - Pasadas pares (0, 2, 4...) -> es ENTRADA (entrada_tardia)
+    //  - Pasadas impares (1, 3, 5...) -> es SALIDA
+    //
+    //Esto cubre el caso de un alumno que entra-sale-vuelve a entrar-vuelve a salir
+    //el mismo dia (cita medica con vuelta al centro).
+    //Pega: si se olvida una pasada, las siguientes quedan invertidas. Para esos
+    //casos esta el "modo manual" oculto en el engranaje.
     //
     //En el caso de salida, aplicamos el flujo mayor/menor:
-    //  - Mayor de edad: salida_anticipada_autorizada (automatica)
+    //  - Mayor de edad: salida_anticipada (sin "autorizada", se va libremente)
     //  - Menor de edad: preguntar al adulto presente
     const { total } = await consultarHistorialHoy(datosUsuario.uid);
+    const esPar = total % 2 === 0;
 
-    if (total === 0) {
-      //Sin registros previos hoy: es una entrada que llega tarde
+    if (esPar) {
+      //Pasada par -> es una entrada
       return { tipo: 'auto', regType: REG_TYPE.ENTRADA_TARDIA, estado: 'precaucion' };
     }
 
-    //Ya tiene registros -> es salida.
+    //Pasada impar -> es una salida.
     //REGLA: mayores de edad pueden salir libremente -> salida_anticipada (sin "autorizada")
     //       menores necesitan autorizacion del adulto presente -> preguntar
     //La etiqueta "salida_anticipada_autorizada" se reserva para menores con OK.
@@ -371,6 +409,43 @@ export default function ScannerScreen({ route, navigation }) {
   //LECTORES
   //============================================
 
+  const vincularNfc = async (uidLeido) => {
+    if (!modoBinding) return;
+    try {
+      const respuesta = await apiClient.post(`${API_BASE_URL}/api/vincular-nfc`, {
+        id: modoBinding.id,
+        tipo: modoBinding.tipo,
+        uid: uidLeido,
+      });
+
+      if (respuesta && respuesta.success) {
+        setBindingMensaje({
+          tipo: 'exito',
+          texto: `NFC vinculado correctamente a ${modoBinding.nombre}`,
+        });
+        setTimeout(() => {
+          setModoBinding(null);
+          setBindingMensaje(null);
+          navigation.goBack();
+        }, 1200);
+      } else {
+        setBindingMensaje({
+          tipo: 'error',
+          texto: respuesta?.message || 'No se pudo vincular el NFC',
+        });
+      }
+    } catch (error) {
+      const msg = error?.response?.data?.message
+        || error?.message
+        || 'Error al vincular NFC';
+      const code = error?.response?.data?.code;
+      setBindingMensaje({
+        tipo: 'error',
+        texto: code === 'UID_EN_USO' ? msg : `Error: ${msg}`,
+      });
+    }
+  };
+
   const procesarLectorWeb = async () => {
     if (!uidWeb) return;
     try {
@@ -382,6 +457,11 @@ export default function ScannerScreen({ route, navigation }) {
       let byte3 = hexOriginal.substring(2, 4);
       let byte4 = hexOriginal.substring(0, 2);
       let hexInvertido = (byte1 + byte2 + byte3 + byte4).toUpperCase();
+
+      if (modoBinding) {
+        await vincularNfc(hexInvertido);
+        return;
+      }
 
       const data = await apiClient.post(API_ENDPOINTS.VERIFICAR_NFC, { tarjetaId: hexInvertido });
 
@@ -419,6 +499,11 @@ export default function ScannerScreen({ route, navigation }) {
         NfcManager.requestTechnology(NfcTech.NfcA)
       );
       const tag = await NfcManager.getTag();
+
+      if (modoBinding) {
+        await vincularNfc(tag.id);
+        return;
+      }
 
       const data = await apiClient.post(API_ENDPOINTS.VERIFICAR_NFC, { tarjetaId: tag.id });
 
@@ -463,6 +548,86 @@ export default function ScannerScreen({ route, navigation }) {
   //============================================
   //RENDER: pantalla de escaneo (sin alumno cargado)
   //============================================
+  if (modoBinding) {
+    return (
+      <View style={styles.container}>
+        <TouchableOpacity
+          style={styles.btnEngranaje}
+          onPress={() => { setModoBinding(null); setBindingMensaje(null); navigation.goBack(); }}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="close" size={22} color="#9CA3AF" />
+        </TouchableOpacity>
+
+        <View style={styles.cajaBlanca}>
+          <View style={[styles.circuloIcono, styles.circuloIconoBinding]}>
+            <Ionicons name="link" size={64} color="#1D4ED8" />
+          </View>
+
+          <View style={styles.bindingBadge}>
+            <Ionicons name="information-circle" size={14} color="#1D4ED8" style={{ marginRight: 4 }} />
+            <Text style={styles.bindingBadgeTexto}>Modo vinculacion</Text>
+          </View>
+
+          <Text style={styles.tituloVacio}>Vincular tarjeta a:</Text>
+          <Text style={styles.bindingNombre}>{modoBinding.nombre}</Text>
+          {modoBinding.curso && (
+            <Text style={styles.subtituloVacio}>{modoBinding.curso}</Text>
+          )}
+
+          {bindingMensaje && (
+            <View style={[
+              styles.bindingMensaje,
+              bindingMensaje.tipo === 'exito' ? styles.bindingMensajeExito : styles.bindingMensajeError,
+            ]}>
+              <Ionicons
+                name={bindingMensaje.tipo === 'exito' ? 'checkmark-circle' : 'alert-circle'}
+                size={18}
+                color={bindingMensaje.tipo === 'exito' ? '#15803D' : '#DC2626'}
+                style={{ marginRight: 8 }}
+              />
+              <Text style={[
+                styles.bindingMensajeTexto,
+                { color: bindingMensaje.tipo === 'exito' ? '#15803D' : '#DC2626' },
+              ]}>
+                {bindingMensaje.texto}
+              </Text>
+            </View>
+          )}
+
+          {!bindingMensaje && (
+            <Text style={[styles.subtituloVacio, { marginTop: 16 }]}>
+              Acerca la tarjeta al lector...
+            </Text>
+          )}
+
+          {!escaneando && Platform.OS !== 'web' && !bindingMensaje && (
+            <TouchableOpacity style={styles.botonGrande} onPress={leerNFC}>
+              <Ionicons name="radio" size={30} color="white" style={{ marginRight: 10, transform: [{ rotate: '90deg' }] }} />
+              <Text style={styles.textoBotonGrande}>Escanear Tarjeta</Text>
+            </TouchableOpacity>
+          )}
+
+          {!escaneando && Platform.OS === 'web' && !bindingMensaje && (
+            <TextInput
+              style={[styles.botonGrande, { backgroundColor: '#F3F4F6', color: '#1F2937', textAlign: 'center' }]}
+              placeholder="Pasa la tarjeta por el lector USB..."
+              placeholderTextColor="#9CA3AF"
+              value={uidWeb}
+              onChangeText={setUidWeb}
+              onSubmitEditing={procesarLectorWeb}
+              autoFocus
+            />
+          )}
+
+          {escaneando && (
+            <ActivityIndicator size="large" color="#1D4ED8" style={{ marginTop: 16 }} />
+          )}
+        </View>
+      </View>
+    );
+  }
+
   if (!alumno) {
     return (
       <View style={styles.container}>
@@ -702,6 +867,58 @@ const styles = StyleSheet.create({
   },
   circuloIconoActivo: {
     backgroundColor: '#DCFCE7',
+  },
+  circuloIconoBinding: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 2,
+    borderColor: '#DBEAFE',
+  },
+  bindingBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#DBEAFE',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  bindingBadgeTexto: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#1D4ED8',
+  },
+  bindingNombre: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#1D4ED8',
+    marginBottom: 4,
+    textAlign: 'center',
+  },
+  bindingMensaje: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+    marginTop: 16,
+    marginBottom: 4,
+    borderWidth: 1,
+    maxWidth: 320,
+  },
+  bindingMensajeExito: {
+    backgroundColor: '#DCFCE7',
+    borderColor: '#86EFAC',
+  },
+  bindingMensajeError: {
+    backgroundColor: '#FEE2E2',
+    borderColor: '#FECACA',
+  },
+  bindingMensajeTexto: {
+    fontSize: 13,
+    fontWeight: '700',
+    flexShrink: 1,
   },
   tituloVacio: {
     fontSize: 20,

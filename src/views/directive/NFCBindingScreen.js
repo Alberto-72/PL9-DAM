@@ -1,53 +1,49 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import { View, Text, FlatList, TouchableOpacity, ActivityIndicator, StyleSheet } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { fetchOdooData } from '../../services/LogInService';
 
 export default function NFCBindingScreen({ navigation }) {
   const [usuariosSinNFC, setUsuariosSinNFC] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  //Cargamos alumnos y profesores en paralelo, y filtramos solo los que no tienen NFC vinculado
-  useEffect(() => {
-    const loadUsuarios = async () => {
-      setLoading(true);
-      try {
-        //Promise.all hace las dos peticiones a la vez en vez de una detras de otra (mas rapido)
-        const [alumnos, profesores] = await Promise.all([
-          fetchOdooData('gestion_entrada.alumno'),
-          fetchOdooData('gestion_entrada.profesor')
-        ]);
+  const loadUsuarios = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [alumnos, profesores] = await Promise.all([
+        fetchOdooData('gestion_entrada.alumno'),
+        fetchOdooData('gestion_entrada.profesor')
+      ]);
 
-        //Etiquetamos cada usuario con su tipo y un subtitulo para mostrarlo en la lista
-        const alumnosMapped = alumnos.map(a => ({ ...a, tipo: 'Alumno', subtitulo: a.school_year }));
-        const profesoresMapped = profesores.map(p => ({ ...p, tipo: 'Profesor', subtitulo: p.email || 'Personal Docente' }));
+      const alumnosMapped = alumnos.map(a => ({ ...a, tipo: 'Alumno', subtitulo: a.school_year }));
+      const profesoresMapped = profesores.map(p => ({ ...p, tipo: 'Profesor', subtitulo: p.email || 'Personal Docente' }));
 
-        //Solo nos interesan los que NO tienen uid (los pendientes de vincular)
-        const todosLosPendientes = [...alumnosMapped, ...profesoresMapped].filter(u => !u.uid);
-        setUsuariosSinNFC(todosLosPendientes);
-      } catch (error) {
-        console.error("Error cargando usuarios pendientes:", error.message);
-      } finally {
-        setLoading(false);
-      }
-    };
-    loadUsuarios();
+      const todosLosPendientes = [...alumnosMapped, ...profesoresMapped].filter(u => !u.uid);
+      setUsuariosSinNFC(todosLosPendientes);
+    } catch (error) {
+      console.error("Error cargando usuarios pendientes:", error.message);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
+  useFocusEffect(
+    useCallback(() => {
+      loadUsuarios();
+    }, [loadUsuarios])
+  );
 
-  //Al vincular, mandamos al scanner los datos del usuario y la flag esVinculacion
-  //para que el scanner sepa que la siguiente lectura NFC debe asociarse a este usuario
   const handleVincular = (usuario) => {
     navigation.navigate('Control', {
       screen: 'Escáner',
       params: {
-        studentToValidate: {
-          nombre: `${usuario.name} ${usuario.surname}`,
+        usuarioAVincular: {
+          id: usuario.id,
+          tipo: usuario.tipo.toLowerCase(),
+          nombre: `${usuario.name} ${usuario.surname || ''}`.trim(),
           curso: usuario.subtitulo,
           foto: usuario.photo,
-          fechaNacimiento: usuario.birth_date,
-          tieneTransporte: usuario.can_bus,
-          esVinculacion: true
         }
       }
     });

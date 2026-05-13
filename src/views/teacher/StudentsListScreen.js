@@ -15,8 +15,26 @@ import {
 import { Ionicons, FontAwesome5, Feather } from '@expo/vector-icons';
 import { API_ENDPOINTS } from '../../config/api';
 import { apiClient } from '../../services/apiClient';
-//Fuente unica de cursos: ver src/config/cursos.js
-import { FILTRO_TODOS, getNombreCurso } from '../../config/cursos';
+
+//Mapeo de codigo corto de curso -> texto legible para el usuario.
+//Esto se hace en el frontend porque el backend devuelve los datos crudos de Odoo.
+const MAPA_CURSOS = {
+  '1ESO': '1º ESO',
+  '2ESO': '2º ESO',
+  '3ESO': '3º ESO',
+  '4ESO': '4º ESO',
+  '1BACH': '1º Bachillerato',
+  '2BACH': '2º Bachillerato',
+  '1CFGM_SM': '1º CFGM Ciclo Medio SMYR',
+  '2CFGM_SM': '2º CFGM Ciclo Medio SMYR',
+  '1CFGS_CS_DAM': '1º CFGS Ciclo Superior DAM',
+  '2CFGS_CS_DAM': '2º CFGS Ciclo Superior DAM',
+  '1CFGS_GFMN': '1º CFGS Gestión Forestal y del Medio Natural',
+  '2CFGS_GFMN': '2º CFGS Gestión Forestal y del Medio Natural'
+};
+
+//Valor especial para el filtro cuando no hay filtro aplicado
+const FILTRO_TODOS = '__TODOS__';
 
 export default function StudentsListScreen({ navigation, route }) {
   const [listaAlumnos, setListaAlumnos] = useState([]);
@@ -65,7 +83,7 @@ export default function StudentsListScreen({ navigation, route }) {
         const alumnosFormateados = data.alumnos.map(a => ({
           ...a,
           nombreCompleto: `${a.name} ${a.surname || ''}`.trim(),
-          cursoTexto: getNombreCurso(a.school_year),
+          cursoTexto: MAPA_CURSOS[a.school_year] || a.school_year || 'Sin curso',
           emailValidado: (a.email && a.email !== false && a.email !== "false") ? a.email : 'Sin email'
         }));
         setListaAlumnos(alumnosFormateados);
@@ -95,7 +113,7 @@ export default function StudentsListScreen({ navigation, route }) {
       .sort()
       .map(codigo => ({
         codigo,
-        etiqueta: getNombreCurso(codigo)
+        etiqueta: MAPA_CURSOS[codigo] || codigo
       }));
   })();
 
@@ -109,7 +127,7 @@ export default function StudentsListScreen({ navigation, route }) {
   //Etiqueta del filtro de curso actual, para mostrar en el boton
   const etiquetaCursoActual = cursoFiltro === FILTRO_TODOS
     ? 'Todos'
-    : getNombreCurso(cursoFiltro);
+    : (MAPA_CURSOS[cursoFiltro] || cursoFiltro);
 
   //Abre el modal de detalle del alumno
   const verDetalleAlumno = (item) => {
@@ -160,12 +178,9 @@ export default function StudentsListScreen({ navigation, route }) {
       <View style={styles.busIndicator}>
         <FontAwesome5
           name="bus"
-          size={14}
+          size={20}
           color={item.can_bus ? "#22C55E" : "#EF4444"}
         />
-        <Text style={[styles.busText, { color: item.can_bus ? "#22C55E" : "#EF4444" }]}>
-          {item.can_bus ? 'BUS' : 'NO'}
-        </Text>
       </View>
 
       {/*Boton del ojo: abre el modal con todos los datos del alumno*/}
@@ -546,13 +561,8 @@ const styles = StyleSheet.create({
   busIndicator: {
     alignItems: 'center',
     justifyContent: 'center',
-    minWidth: 40,
+    minWidth: 30,
     marginRight: 8,
-  },
-  busText: {
-    fontSize: 9,
-    fontWeight: '800',
-    marginTop: 2,
   },
   btnOjo: {
     width: 36,

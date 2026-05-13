@@ -12,6 +12,7 @@ import {
   Modal,
   ScrollView,
   Alert,
+  TextInput,
 } from 'react-native';
 import { Feather, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { API_ENDPOINTS, API_BASE_URL } from '../../config/api';
@@ -27,7 +28,7 @@ const ETIQUETAS_REG_TYPE = {
   entrada_prof:                 'Entrada Profesor',
   salida_anticipada:            'Salida Anticipada',
   salida_recreo:                'Salida Recreo',
-  salida_bus:                   'Salida Bus',
+  salida_bus:                   'Salida Transporte',
   salida_anticipada_autorizada: 'Salida Anticipada Autorizada',
   salida_regular:               'Salida Regular',
   salida_prof:                  'Salida Profesor',
@@ -81,6 +82,19 @@ export default function DashboardScreen() {
     incidenciasHoy: 0,
   });
   const [chartData, setChartData] = useState([]);
+  //Datos de la segunda semana cuando esta activa la comparacion. null si no hay.
+  const [chartData2, setChartData2] = useState(null);
+  //Fecha (string YYYY-MM-DD) de la semana del grafico. Por defecto hoy.
+  //Cualquier fecha de la semana sirve: el backend calcula el lunes.
+  const [semanaChart, setSemanaChart] = useState(fechaHoy());
+  //Fecha de la semana a comparar. Si es null no se compara.
+  const [semanaChart2, setSemanaChart2] = useState(null);
+  //Etiquetas legibles "L 8 may - V 12 may" para mostrar al usuario
+  const [semanaLabel, setSemanaLabel] = useState('Esta semana');
+  const [semanaLabel2, setSemanaLabel2] = useState('');
+  //Modales de seleccion de semana (uno para semana principal, otro para semana2)
+  const [mostrarSelectorSemana, setMostrarSelectorSemana] = useState(false);
+  const [seleccionandoSemana2, setSeleccionandoSemana2] = useState(false);
 
   const [tooltip, setTooltip] = useState(null);
 
@@ -88,6 +102,10 @@ export default function DashboardScreen() {
   const [fecha, setFecha] = useState(fechaHoy());
   const [cursoFiltro, setCursoFiltro] = useState(FILTRO_TODOS);
   const [mostrarFiltroCursos, setMostrarFiltroCursos] = useState(false);
+  const [usrTypeFiltro, setUsrTypeFiltro] = useState('alumno');
+  const [buscar, setBuscar] = useState('');
+  const [buscarDebounced, setBuscarDebounced] = useState('');
+  const [mostrarSelectorFecha, setMostrarSelectorFecha] = useState(false);
 
   const [registros, setRegistros] = useState({ entrada: [], salida: [] });
   const [totales, setTotales]     = useState({ entrada: 0, salida: 0 });
@@ -98,23 +116,62 @@ export default function DashboardScreen() {
   const cargandoRef = useRef({ entrada: false, salida: false });
   const fetchTokenRef = useRef(0);
 
+  //Calcula el rango de fechas de la semana de "fechaReferencia" para mostrar
+  //una etiqueta tipo "L 12 may - V 16 may" al usuario.
+  const calcularLabelSemana = (fechaReferencia) => {
+    if (!fechaReferencia) return '';
+    const ref = new Date(fechaReferencia + 'T00:00:00Z');
+    const dia = ref.getUTCDay();
+    const offsetLunes = dia === 0 ? 6 : dia - 1;
+    const lunes = new Date(ref);
+    lunes.setUTCDate(ref.getUTCDate() - offsetLunes);
+    const viernes = new Date(lunes);
+    viernes.setUTCDate(lunes.getUTCDate() + 4);
+    const meses = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+    const f = (d) => `${d.getUTCDate()} ${meses[d.getUTCMonth()]}`;
+    return `${f(lunes)} - ${f(viernes)}`;
+  };
+
   const cargarKpis = useCallback(async () => {
     try {
-      const data = await apiClient.get(API_ENDPOINTS.DASHBOARD);
+      //Construimos URL con parametros opcionales de semana y semana2
+      const params = new URLSearchParams();
+      if (semanaChart) params.append('semana', semanaChart);
+      if (semanaChart2) params.append('semana2', semanaChart2);
+      const url = `${API_ENDPOINTS.DASHBOARD}?${params.toString()}`;
+      const data = await apiClient.get(url);
       if (data.success) {
         setKpis(data.kpis);
-        setChartData(data.chartData);
+        //Nueva estructura: semana = { lunes, viernes, chartData }
+        const sem = data.semana || { chartData: data.chartData || [] };
+        setChartData(sem.chartData || []);
+        setSemanaLabel(calcularLabelSemana(sem.lunes || semanaChart));
+        //Semana de comparacion
+        if (data.semana2) {
+          setChartData2(data.semana2.chartData || []);
+          setSemanaLabel2(calcularLabelSemana(data.semana2.lunes || semanaChart2));
+        } else {
+          setChartData2(null);
+          setSemanaLabel2('');
+        }
       }
     } catch (error) {
       console.error('Error cargando dashboard:', error.message);
     } finally {
       setLoadingKpis(false);
     }
-  }, []);
+  }, [semanaChart, semanaChart2]);
 
   useEffect(() => {
     cargarKpis();
   }, [cargarKpis]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setBuscarDebounced(buscar.trim());
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [buscar]);
 
   const cargarRegistros = useCallback(async (tipo, reset = false) => {
     if (cargandoRef.current[tipo]) return;
@@ -134,6 +191,12 @@ export default function DashboardScreen() {
       });
       if (cursoFiltro !== FILTRO_TODOS) {
         params.append('curso', cursoFiltro);
+      }
+      if (usrTypeFiltro === 'alumno' || usrTypeFiltro === 'profesor') {
+        params.append('usr_type', usrTypeFiltro);
+      }
+      if (buscarDebounced) {
+        params.append('buscar', buscarDebounced);
       }
 
       const url = `${API_BASE_URL}/api/registros-paginado?${params.toString()}`;
@@ -166,21 +229,26 @@ export default function DashboardScreen() {
       cargandoRef.current[tipo] = false;
       setCargando(prev => ({ ...prev, [tipo]: false }));
     }
-  }, [fecha, cursoFiltro]);
+  }, [fecha, cursoFiltro, usrTypeFiltro, buscarDebounced]);
 
   useEffect(() => {
     fetchTokenRef.current += 1;
     offsetsRef.current = { entrada: 0, salida: 0 };
     setRegistros({ entrada: [], salida: [] });
     setTotales({ entrada: 0, salida: 0 });
-    cargarRegistros(tipoActivo, true);
-  }, [fecha, cursoFiltro, cargarRegistros, tipoActivo]);
+    cargarRegistros('entrada', true);
+    cargarRegistros('salida', true);
+  }, [fecha, cursoFiltro, usrTypeFiltro, buscarDebounced]);
 
+  //Cambio de tab: si la tabla nueva esta vacia (porque no se cargo todavia),
+  //la cargamos. En la practica con el cambio anterior ya estan ambas cargadas,
+  //pero dejamos esto como seguro.
   useEffect(() => {
     if (registros[tipoActivo].length === 0 && !cargandoRef.current[tipoActivo]) {
       cargarRegistros(tipoActivo, true);
     }
-  }, [tipoActivo, registros, cargarRegistros]);
+    //eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tipoActivo]);
 
   const cargarSiguientePagina = useCallback(() => {
     const enPantalla = registros[tipoActivo].length;
@@ -199,17 +267,25 @@ export default function DashboardScreen() {
   }, [cargarRegistros, cargarKpis]);
 
   useEffect(() => {
+    //Auto-refresh cada 10 segundos.
+    //IMPORTANTE: refrescamos AMBOS tabs (entrada y salida) en cada tick, no solo
+    //el activo. Asi los contadores de las pestañas se mantienen al dia aunque el
+    //usuario no las abra. Es un trade-off: dobla las peticiones a Odoo, pero
+    //evita el efecto de "tab inactivo se queda en 0".
     const id = setInterval(() => {
       cargarKpisRef.current();
-      cargarRegistrosRef.current(tipoActivo, true);
+      cargarRegistrosRef.current('entrada', true);
+      cargarRegistrosRef.current('salida', true);
     }, 10000);
     return () => clearInterval(id);
-  }, [tipoActivo]);
+  }, []);
 
+  //Refresco manual al pulsar el boton: igual que el auto-refresh, ambos tabs
   const refrescarManual = useCallback(() => {
     cargarKpisRef.current();
-    cargarRegistrosRef.current(tipoActivo, true);
-  }, [tipoActivo]);
+    cargarRegistrosRef.current('entrada', true);
+    cargarRegistrosRef.current('salida', true);
+  }, []);
 
   const handleExportar = () => {
     const url = API_ENDPOINTS.EXPORTAR_ACCESOS;
@@ -217,39 +293,22 @@ export default function DashboardScreen() {
     else Linking.openURL(url).catch(err => console.error('Error al abrir URL:', err.message));
   };
 
-  const cambiarFecha = () => {
-    if (Platform.OS === 'web') {
-      const nueva = window.prompt('Fecha (YYYY-MM-DD):', fecha);
-      if (nueva && /^\d{4}-\d{2}-\d{2}$/.test(nueva)) setFecha(nueva);
-    } else {
-      const hoy = new Date();
-      const ayer = new Date(); ayer.setDate(hoy.getDate() - 1);
-      const anteayer = new Date(); anteayer.setDate(hoy.getDate() - 2);
-      const fmt = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  //Abre el modal de seleccion de fecha (web + movil unificado)
+  const cambiarFecha = () => setMostrarSelectorFecha(true);
 
-      Alert.alert(
-        'Seleccionar fecha',
-        'Elige una fecha rapida',
-        [
-          { text: 'Hoy', onPress: () => setFecha(fmt(hoy)) },
-          { text: 'Ayer', onPress: () => setFecha(fmt(ayer)) },
-          { text: 'Anteayer', onPress: () => setFecha(fmt(anteayer)) },
-          { text: 'Cancelar', style: 'cancel' },
-        ]
-      );
-    }
-  };
-
-  const handleMouseEnter = (dayIndex, segIndex, rawValue, label) => {
+  //Tooltip al pasar el raton (solo web).
+  //Recibe el id unico del segmento (string), su valor*5, la etiqueta del segmento
+  //(ej "Puntuales") y el tipo ('entrada' o 'salida').
+  //Mostramos el conteo real (value / 5) junto con la etiqueta especifica de ese
+  //segmento. Si el conteo es 0, no mostramos tooltip.
+  const handleMouseEnter = (segId, rawValue, segLabel, tipo) => {
       if (Platform.OS === 'web') {
           const count = rawValue / 5;
-          
-          if(count === 0) return;
-
+          if (count === 0) return;
+          //Texto del tooltip: "5 Puntuales (entradas)" o "3 Anticipadas (salidas)"
           setTooltip({
-              dayIndex,
-              segIndex,
-              text: `${count} ${label}`
+              segId,
+              text: `${count} ${segLabel}`,
           });
       }
   };
@@ -260,6 +319,68 @@ export default function DashboardScreen() {
       }
   };
 
+  //Helper que renderiza el grafico de barras semanal (5 dias x 2 mini-barras).
+  //
+  //chartArr: array de 5 dias con .day, .entrada.segments, .salida.segments
+  //prefijo:  string distintivo para los segIds del tooltip (evita colisiones
+  //          cuando hay 2 graficos: 'main' y 'comp')
+  //
+  //IMPORTANTE: el tooltip se renderiza FUERA del segmento (a nivel del
+  //barWrapper) para que no se recorte por el overflow:'hidden' del miniBar.
+  //Lo posicionamos con left:50% + transform:translateX(-50%) sobre la columna.
+  const renderBarras = (chartArr, prefijo) => (
+    <View style={styles.chartContainer}>
+      {chartArr.map((item, dIndex) => {
+        //Buscar si hay un tooltip activo en CUALQUIER segmento de esta columna
+        const segIdEntrada0 = `${prefijo}-${dIndex}-entrada-0`;
+        const hoveredEnEstaColumna = tooltip && tooltip.segId && tooltip.segId.startsWith(`${prefijo}-${dIndex}-`);
+        return (
+          <View key={dIndex} style={styles.barWrapper}>
+            <View style={styles.parBarras}>
+              {['entrada', 'salida'].map((tipo) => (
+                <View key={tipo} style={styles.miniBarBackground}>
+                  {(item[tipo]?.segments || []).map((seg, sIndex) => {
+                    const segId = `${prefijo}-${dIndex}-${tipo}-${sIndex}`;
+                    const isHovered = tooltip && tooltip.segId === segId;
+                    return (
+                      <View
+                        key={sIndex}
+                        onMouseEnter={() => handleMouseEnter(segId, seg.value, seg.label, tipo)}
+                        onMouseLeave={handleMouseLeave}
+                        style={[
+                          styles.barFillSegment,
+                          {
+                            height: `${Math.min(seg.value, 100)}%`,
+                            backgroundColor: seg.color,
+                            opacity: isHovered ? 0.8 : 1,
+                          },
+                        ]}
+                      />
+                    );
+                  })}
+                </View>
+              ))}
+            </View>
+            {/*
+              Tooltip a nivel del barWrapper (no del segmento) para evitar
+              que el overflow:'hidden' del miniBarBackground lo recorte.
+              Solo se monta cuando la columna tiene el segmento hovereado.
+            */}
+            {hoveredEnEstaColumna && (
+              <View style={styles.tooltipContainerFix}>
+                <View style={styles.tooltipBox}>
+                  <Text style={styles.tooltipText}>{tooltip.text}</Text>
+                </View>
+                <View style={styles.tooltipArrow} />
+              </View>
+            )}
+            <Text style={styles.barLabel}>{item.day}</Text>
+          </View>
+        );
+      })}
+    </View>
+  );
+
   const renderRegistro = ({ item }) => {
     const color = COLORES_REG_TYPE[item.reg_type] || { bg: '#F1F5F9', fg: '#475569' };
     const etiqueta = ETIQUETAS_REG_TYPE[item.reg_type] || item.reg_type;
@@ -269,26 +390,36 @@ export default function DashboardScreen() {
 
     return (
       <View style={styles.fila}>
-        <View style={styles.filaAvatar}>
-          {item.photo ? (
-            <Image source={{ uri: `data:image/png;base64,${item.photo}` }} style={styles.filaFoto} />
-          ) : (
-            <Ionicons name="person" size={20} color="#94A3B8" />
-          )}
-        </View>
-
-        <View style={styles.filaInfo}>
-          <Text style={styles.filaNombre} numberOfLines={1}>{item.nombre}</Text>
-          <Text style={styles.filaSub} numberOfLines={1}>{subtitulo}</Text>
-        </View>
-
-        <View style={styles.filaDerecha}>
-          <Text style={styles.filaHora}>{formatearHora(item.dateTime)}</Text>
-          <View style={[styles.badge, { backgroundColor: color.bg }]}>
-            <Text style={[styles.badgeTexto, { color: color.fg }]} numberOfLines={1}>
-              {etiqueta}
-            </Text>
+        <View style={styles.filaTop}>
+          <View style={styles.filaAvatar}>
+            {item.photo ? (
+              <Image source={{ uri: `data:image/png;base64,${item.photo}` }} style={styles.filaFoto} />
+            ) : (
+              <Ionicons name="person" size={20} color="#94A3B8" />
+            )}
           </View>
+
+          <View style={styles.filaInfo}>
+            <Text style={styles.filaNombre} numberOfLines={1}>{item.nombre}</Text>
+            <Text style={styles.filaSub} numberOfLines={2}>{subtitulo}</Text>
+          </View>
+
+          <View style={styles.filaDerecha}>
+            <Text style={styles.filaHora}>{formatearHora(item.dateTime)}</Text>
+            <View style={[styles.badge, { backgroundColor: color.bg }]}>
+              <Text style={[styles.badgeTexto, { color: color.fg }]} numberOfLines={1}>
+                {etiqueta}
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.filaOperadorBar}>
+          <Feather name="user-check" size={11} color="#64748B" style={{ marginRight: 6 }} />
+          <Text style={styles.filaOperadorLabelInline}>Escaneado por: </Text>
+          <Text style={styles.filaOperadorNombre} numberOfLines={1}>
+            {item.operadorNombre || 'Sin operador'}
+          </Text>
         </View>
       </View>
     );
@@ -312,60 +443,123 @@ export default function DashboardScreen() {
         <View style={styles.card}>
           <View style={styles.cardHeader}>
             <Feather name="bar-chart-2" size={18} color="#1D4ED8" style={{ marginRight: 8 }} />
-            <Text style={styles.cardTitle}>Salidas (Semana)</Text>
+            <Text style={styles.cardTitle}>Asistencia semanal</Text>
           </View>
 
-          <View style={styles.chartContainer}>
-            {chartData.map((item, dIndex) => (
-              <View key={dIndex} style={styles.barWrapper}>
-                <View style={styles.barBackground}>
-                  {item.segments.map((seg, sIndex) => {
-                      // Determinar etiqueta basada en el color
-                      let segLabel = '';
-                      if(seg.color === '#3B82F6') segLabel = 'Regulares';
-                      if(seg.color === '#EF4444') segLabel = 'Anticipadas';
-                      if(seg.color === '#10B981') segLabel = 'Bus/Recreo';
+          {/*
+            Cabecera con selector de semana actual + boton comparar / reset.
+            La semana mostrada se etiqueta abajo de cada grafico.
+          */}
+          <View style={styles.chartHeader}>
+            <TouchableOpacity
+              style={styles.chartHeaderBoton}
+              onPress={() => { setSeleccionandoSemana2(false); setMostrarSelectorSemana(true); }}
+              activeOpacity={0.7}
+            >
+              <Feather name="calendar" size={14} color="#2563EB" style={{ marginRight: 6 }} />
+              <Text style={styles.chartHeaderTexto}>{semanaLabel}</Text>
+            </TouchableOpacity>
 
-                      const isHovered = tooltip && tooltip.dayIndex === dIndex && tooltip.segIndex === sIndex;
+            {chartData2 == null ? (
+              <TouchableOpacity
+                style={[styles.chartHeaderBoton, { marginLeft: 8, backgroundColor: '#F8FAFC' }]}
+                onPress={() => { setSeleccionandoSemana2(true); setMostrarSelectorSemana(true); }}
+                activeOpacity={0.7}
+              >
+                <Feather name="plus" size={14} color="#475569" style={{ marginRight: 6 }} />
+                <Text style={[styles.chartHeaderTexto, { color: '#475569' }]}>Comparar</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={[styles.chartHeaderBoton, { marginLeft: 8, backgroundColor: '#FEE2E2', borderColor: '#FECACA' }]}
+                onPress={() => { setSemanaChart2(null); setChartData2(null); setSemanaLabel2(''); }}
+                activeOpacity={0.7}
+              >
+                <Feather name="x" size={14} color="#DC2626" style={{ marginRight: 6 }} />
+                <Text style={[styles.chartHeaderTexto, { color: '#DC2626' }]}>Quitar comparacion</Text>
+              </TouchableOpacity>
+            )}
 
-                      return (
-                        <View
-                          key={sIndex}
-                          onMouseEnter={() => handleMouseEnter(dIndex, sIndex, seg.value, segLabel)}
-                          onMouseLeave={handleMouseLeave}
-                          style={[
-                            styles.barFillSegment,
-                            { 
-                                height: `${Math.min(seg.value, 100)}%`, 
-                                backgroundColor: seg.color,
-                                opacity: isHovered ? 0.8 : 1
-                            }
-                          ]}
-                        >
-                            {isHovered && (
-                                <View style={styles.tooltipContainer}>
-                                    <View style={styles.tooltipBox}>
-                                        <Text style={styles.tooltipText}>{tooltip.text}</Text>
-                                    </View>
-                                    <View style={styles.tooltipArrow} />
-                                </View>
-                            )}
-                        </View>
-                      )
-                  })}
-                </View>
-                <Text style={styles.barLabel}>{item.day}</Text>
+            {/*Boton de reset: solo si la semana actual no es ya la de hoy*/}
+            {semanaChart !== fechaHoy() && (
+              <TouchableOpacity
+                style={[styles.chartHeaderBoton, { marginLeft: 8 }]}
+                onPress={() => setSemanaChart(fechaHoy())}
+                activeOpacity={0.7}
+              >
+                <Feather name="rotate-ccw" size={14} color="#2563EB" />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/*
+            Cuando hay comparacion, mostramos UN titulo encima de CADA grafico
+            con la etiqueta de la semana correspondiente. Asi siempre se sabe
+            que grafico es que semana. Cuando NO hay comparacion, omitimos el
+            titulo porque ya esta el boton de seleccion arriba.
+          */}
+          {chartData2 != null && (
+            <View style={styles.chartSemanaHeader}>
+              <Feather name="calendar" size={12} color="#1D4ED8" style={{ marginRight: 4 }} />
+              <Text style={styles.chartSemanaHeaderTexto}>Semana actual: {semanaLabel}</Text>
+            </View>
+          )}
+          {renderBarras(chartData, 'main', tooltip, handleMouseEnter, handleMouseLeave)}
+
+          {chartData2 != null && (
+            <View style={{ marginTop: 14 }}>
+              <View style={[styles.chartSemanaHeader, { backgroundColor: '#FEF3C7', borderColor: '#FDE68A' }]}>
+                <Feather name="calendar" size={12} color="#A16207" style={{ marginRight: 4 }} />
+                <Text style={[styles.chartSemanaHeaderTexto, { color: '#A16207' }]}>
+                  Comparando con: {semanaLabel2}
+                </Text>
               </View>
-            ))}
-          </View>
+              {renderBarras(chartData2, 'comp', tooltip, handleMouseEnter, handleMouseLeave)}
+            </View>
+          )}
 
+          {/*
+            Leyenda doble. Como entrada y salida usan los MISMOS colores con etiquetas
+            distintas, dividimos la leyenda en dos filas. Asi se entiende mejor que
+            azul significa cosas distintas segun la barra.
+            Profesores tienen color propio en cada lado: violeta entradas, amarillo salidas.
+          */}
           <View style={styles.legendContainer}>
+            <Text style={styles.legendGroupTitle}>Entradas:</Text>
+            <LegendItem color="#3B82F6" label="Puntuales" />
+            <LegendItem color="#EF4444" label="Tardias" />
+            <LegendItem color="#10B981" label="Recreo" />
+            <LegendItem color="#A855F7" label="Profesores" />
+          </View>
+          <View style={styles.legendContainer}>
+            <Text style={styles.legendGroupTitle}>Salidas:</Text>
             <LegendItem color="#3B82F6" label="Regulares" />
             <LegendItem color="#EF4444" label="Anticipadas" />
-            <LegendItem color="#10B981" label="Bus/Recreo" />
+            <LegendItem color="#10B981" label="Transporte/Recreo" />
+            <LegendItem color="#EAB308" label="Profesores" />
           </View>
         </View>
       )}
+
+      <View style={styles.tabsContainer}>
+        {[
+          { id: 'alumno',   label: 'Alumnos',    icon: 'user' },
+          { id: 'profesor', label: 'Profesores', icon: 'briefcase' },
+          { id: 'todos',    label: 'Todos',      icon: 'users' },
+        ].map(opt => (
+          <TouchableOpacity
+            key={opt.id}
+            style={[styles.tabBoton, usrTypeFiltro === opt.id && styles.tabBotonActivo]}
+            onPress={() => setUsrTypeFiltro(opt.id)}
+            activeOpacity={0.7}
+          >
+            <Feather name={opt.icon} size={14} color={usrTypeFiltro === opt.id ? '#fff' : '#475569'} style={{ marginRight: 6 }} />
+            <Text style={[styles.tabTexto, usrTypeFiltro === opt.id && styles.tabTextoActivo]}>
+              {opt.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
 
       <View style={styles.tabsContainer}>
         <TouchableOpacity
@@ -400,16 +594,34 @@ export default function DashboardScreen() {
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.filtroBoton, { marginLeft: 8, flex: 1 }]}
+          style={styles.filtroBoton}
           onPress={() => setMostrarFiltroCursos(true)}
           activeOpacity={0.7}
         >
           <Feather name="filter" size={14} color="#2563EB" style={{ marginRight: 6 }} />
           <Text style={styles.filtroTexto} numberOfLines={1}>
-            {cursoFiltro === FILTRO_TODOS ? 'Todos los cursos' : getNombreCurso(cursoFiltro)}
+            {cursoFiltro === FILTRO_TODOS ? 'Cursos: Todos' : getNombreCurso(cursoFiltro)}
           </Text>
           <Feather name="chevron-down" size={14} color="#2563EB" />
         </TouchableOpacity>
+
+        <View style={styles.buscadorWrap}>
+          <Feather name="search" size={14} color="#2563EB" style={{ marginRight: 6 }} />
+          <TextInput
+            style={styles.buscadorInput}
+            placeholder="Buscar por nombre..."
+            placeholderTextColor="#94A3B8"
+            value={buscar}
+            onChangeText={setBuscar}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          {buscar.length > 0 && (
+            <TouchableOpacity onPress={() => setBuscar('')} style={{ padding: 4 }}>
+              <Feather name="x" size={14} color="#94A3B8" />
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       <View style={styles.headerTabla}>
@@ -472,7 +684,7 @@ export default function DashboardScreen() {
         data={registros[tipoActivo]}
         keyExtractor={(item, index) => (item.id != null ? `r-${item.id}` : `idx-${index}`)}
         renderItem={renderRegistro}
-        ListHeaderComponent={renderHeader}
+        ListHeaderComponent={renderHeader()}
         ListFooterComponent={renderFooter}
         ListEmptyComponent={renderEmpty}
         onEndReached={cargarSiguientePagina}
@@ -554,6 +766,138 @@ export default function DashboardScreen() {
           </View>
         </TouchableOpacity>
       </Modal>
+
+      {/*============================================
+         MODAL: Selector de fecha (historial)
+         Da opciones rapidas: hoy, ayer, anteayer, hace una semana, hace un mes.
+         Tambien permite escribir una fecha exacta YYYY-MM-DD.
+         Unificado para web y movil para evitar el prompt() horrendo.
+         ============================================*/}
+      <Modal
+        animationType="fade"
+        transparent
+        visible={mostrarSelectorFecha}
+        onRequestClose={() => setMostrarSelectorFecha(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setMostrarSelectorFecha(false)}
+        >
+          <View style={styles.modalFiltro} onStartShouldSetResponder={() => true}>
+            <Text style={styles.modalFiltroTitulo}>Seleccionar fecha</Text>
+            <ScrollView style={{ maxHeight: 400 }}>
+              {(() => {
+                const opciones = [];
+                const fmt = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+                const hoy = new Date();
+                const ayer = new Date(); ayer.setDate(hoy.getDate() - 1);
+                const anteayer = new Date(); anteayer.setDate(hoy.getDate() - 2);
+                const haceUnaSemana = new Date(); haceUnaSemana.setDate(hoy.getDate() - 7);
+                const haceUnMes = new Date(); haceUnMes.setMonth(hoy.getMonth() - 1);
+                opciones.push({ label: 'Hoy',          valor: fmt(hoy) });
+                opciones.push({ label: 'Ayer',         valor: fmt(ayer) });
+                opciones.push({ label: 'Anteayer',     valor: fmt(anteayer) });
+                opciones.push({ label: 'Hace 1 semana',valor: fmt(haceUnaSemana) });
+                opciones.push({ label: 'Hace 1 mes',   valor: fmt(haceUnMes) });
+                return opciones.map(op => (
+                  <TouchableOpacity
+                    key={op.valor}
+                    style={[styles.opcionCurso, fecha === op.valor && styles.opcionCursoActiva]}
+                    onPress={() => { setFecha(op.valor); setMostrarSelectorFecha(false); }}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.opcionCursoTexto, fecha === op.valor && styles.opcionCursoTextoActivo]}>
+                        {op.label}
+                      </Text>
+                      <Text style={{ fontSize: 11, color: '#94A3B8', marginTop: 2 }}>{formatearFechaParaApp(op.valor)}</Text>
+                    </View>
+                    {fecha === op.valor && <Feather name="check" size={18} color="#2563EB" />}
+                  </TouchableOpacity>
+                ));
+              })()}
+              {/*En web tambien permitimos escribir una fecha exacta*/}
+              {Platform.OS === 'web' && (
+                <TouchableOpacity
+                  style={styles.opcionCurso}
+                  onPress={() => {
+                    const nueva = window.prompt('Fecha (YYYY-MM-DD):', fecha);
+                    if (nueva && /^\d{4}-\d{2}-\d{2}$/.test(nueva)) {
+                      setFecha(nueva);
+                      setMostrarSelectorFecha(false);
+                    }
+                  }}
+                >
+                  <Text style={[styles.opcionCursoTexto, { color: '#475569' }]}>Otra fecha…</Text>
+                </TouchableOpacity>
+              )}
+            </ScrollView>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/*============================================
+         MODAL: Selector de semana del grafico
+         Cada opcion es una semana relativa: actual, anterior, hace 2 semanas, etc.
+         Calculamos para cada opcion el lunes y mostramos el rango "L 12 may - V 16 may".
+         La opcion elegida se guarda en semanaChart (o semanaChart2 si estamos eligiendo
+         la semana de comparacion: el flag seleccionandoSemana2).
+         ============================================*/}
+      <Modal
+        animationType="fade"
+        transparent
+        visible={mostrarSelectorSemana}
+        onRequestClose={() => setMostrarSelectorSemana(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setMostrarSelectorSemana(false)}
+        >
+          <View style={styles.modalFiltro} onStartShouldSetResponder={() => true}>
+            <Text style={styles.modalFiltroTitulo}>
+              {seleccionandoSemana2 ? 'Comparar con semana...' : 'Seleccionar semana'}
+            </Text>
+            <ScrollView style={{ maxHeight: 400 }}>
+              {(() => {
+                const fmt = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+                const opciones = [];
+                for (let i = 0; i < 8; i++) {
+                  const ref = new Date();
+                  ref.setDate(ref.getDate() - i * 7);
+                  const label = i === 0 ? 'Esta semana' : (i === 1 ? 'Semana pasada' : `Hace ${i} semanas`);
+                  opciones.push({ label, valor: fmt(ref) });
+                }
+                const valorActivo = seleccionandoSemana2 ? semanaChart2 : semanaChart;
+                return opciones.map(op => (
+                  <TouchableOpacity
+                    key={op.valor}
+                    style={[styles.opcionCurso, valorActivo === op.valor && styles.opcionCursoActiva]}
+                    onPress={() => {
+                      if (seleccionandoSemana2) {
+                        setSemanaChart2(op.valor);
+                      } else {
+                        setSemanaChart(op.valor);
+                      }
+                      setMostrarSelectorSemana(false);
+                    }}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.opcionCursoTexto, valorActivo === op.valor && styles.opcionCursoTextoActivo]}>
+                        {op.label}
+                      </Text>
+                      <Text style={{ fontSize: 11, color: '#94A3B8', marginTop: 2 }}>
+                        {calcularLabelSemana(op.valor)}
+                      </Text>
+                    </View>
+                    {valorActivo === op.valor && <Feather name="check" size={18} color="#2563EB" />}
+                  </TouchableOpacity>
+                ));
+              })()}
+            </ScrollView>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -573,98 +917,488 @@ const LegendItem = ({ color, label }) => (
 );
 
 const styles = StyleSheet.create({
-  content: { padding: 16, paddingBottom: 100 },
-  statsContainer: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 16 },
-  statCard: { flex: 1, backgroundColor: 'white', padding: 12, borderRadius: 16, marginHorizontal: 4, elevation: 2 },
-  statTitle: { fontSize: 9, fontWeight: 'bold', color: '#94A3B8', textTransform: 'uppercase', marginBottom: 8 },
-  statValue: { fontSize: 20, fontWeight: '900', color: '#1E293B' },
-  card: { backgroundColor: 'white', padding: 20, borderRadius: 16, elevation: 2, marginBottom: 16 },
-  cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 24 },
-  cardTitle: { fontSize: 14, fontWeight: 'bold', color: '#334155' },
-  
-  // Modificaciones para el tooltip
-  chartContainer: { flexDirection: 'row', justifyContent: 'space-around', height: 150, alignItems: 'flex-end', paddingBottom: 10, zIndex: 10 },
-  barWrapper: { alignItems: 'center', flex: 1 },
-  barBackground: { width: 30, height: 120, backgroundColor: '#F1F5F9', borderRadius: 6, justifyContent: 'flex-end', marginBottom: 8 },
-  barFillSegment: { width: '100%', position: 'relative', alignItems: 'center' },
-  
-  // Estilos del Tooltip
-  tooltipContainer: {
-      position: 'absolute',
-      bottom: '100%', 
-      alignItems: 'center',
-      marginBottom: 4, 
-      width: 100, 
-      zIndex: 999, 
+  content: {
+    padding: 16,
+    paddingBottom: 100,
   },
-  tooltipBox: {
-      backgroundColor: '#1E293B',
-      paddingHorizontal: 8,
-      paddingVertical: 4,
-      borderRadius: 6,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.25,
-      shadowRadius: 3.84,
-      elevation: 5,
+  statsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 16,
   },
-  tooltipText: {
-      color: 'white',
-      fontSize: 10,
-      fontWeight: 'bold',
-      textAlign: 'center',
+  statCard: {
+    flex: 1,
+    backgroundColor: 'white',
+    padding: 12,
+    borderRadius: 16,
+    marginHorizontal: 4,
+    elevation: 2,
   },
-  tooltipArrow: {
-      width: 0,
-      height: 0,
-      backgroundColor: 'transparent',
-      borderStyle: 'solid',
-      borderLeftWidth: 4,
-      borderRightWidth: 4,
-      borderTopWidth: 4,
-      borderLeftColor: 'transparent',
-      borderRightColor: 'transparent',
-      borderTopColor: '#1E293B',
+  statTitle: {
+    fontSize: 9,
+    fontWeight: 'bold',
+    color: '#94A3B8',
+    textTransform: 'uppercase',
+    marginBottom: 8,
+  },
+  statValue: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: '#1E293B',
+  },
+  card: {
+    backgroundColor: 'white',
+    padding: 20,
+    borderRadius: 16,
+    elevation: 2,
+    marginBottom: 16,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  cardTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#334155',
   },
 
-  barLabel: { fontSize: 12, fontWeight: 'bold', color: '#94A3B8' },
-  legendContainer: { flexDirection: 'row', justifyContent: 'center', marginTop: 15, flexWrap: 'wrap' },
-  legendItem: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 8, marginTop: 4 },
-  legendColor: { width: 12, height: 12, borderRadius: 3, marginRight: 4 },
-  legendLabel: { fontSize: 11, color: '#64748B' },
-  tabsContainer: { flexDirection: 'row', backgroundColor: '#F1F5F9', borderRadius: 12, padding: 4, marginBottom: 12 },
-  tabBoton: { flex: 1, flexDirection: 'row', paddingVertical: 10, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  tabBotonActivo: { backgroundColor: '#1D4ED8', elevation: 2 },
-  tabTexto: { fontSize: 13, fontWeight: '600', color: '#475569' },
-  tabTextoActivo: { color: 'white', fontWeight: '700' },
-  filtrosFila: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
-  filtroBoton: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#EFF6FF', borderWidth: 1, borderColor: '#DBEAFE', borderRadius: 10, paddingVertical: 8, paddingHorizontal: 12 },
-  filtroTexto: { color: '#2563EB', fontWeight: '700', fontSize: 12, marginRight: 4, flexShrink: 1 },
-  tituloTabla: { fontSize: 13, fontWeight: '700', color: '#1E293B' },
-  headerTabla: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, marginTop: 4 },
-  btnRefresh: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#EFF6FF', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: '#DBEAFE' },
-  btnRefreshTexto: { color: '#2563EB', fontWeight: '700', fontSize: 11, marginLeft: 6 },
-  fila: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', padding: 12, borderRadius: 12, marginBottom: 8, elevation: 1 },
-  filaAvatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#F1F5F9', marginRight: 12, overflow: 'hidden', justifyContent: 'center', alignItems: 'center' },
-  filaFoto: { width: '100%', height: '100%' },
-  filaInfo: { flex: 1, marginRight: 8 },
-  filaNombre: { fontSize: 14, fontWeight: '700', color: '#1E293B' },
-  filaSub: { fontSize: 11, color: '#64748B', marginTop: 2 },
-  filaDerecha: { alignItems: 'flex-end' },
-  filaHora: { fontSize: 13, fontWeight: '700', color: '#1D4ED8', marginBottom: 4 },
-  badge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, maxWidth: 140 },
-  badgeTexto: { fontSize: 10, fontWeight: '800' },
-  listaVacia: { alignItems: 'center', paddingVertical: 40 },
-  listaVaciaTexto: { color: '#94A3B8', fontWeight: '600', marginTop: 10, textAlign: 'center' },
-  finLista: { textAlign: 'center', color: '#94A3B8', fontSize: 12, paddingVertical: 16 },
-  fab: { position: 'absolute', right: 20, bottom: 20, backgroundColor: '#1D4ED8', flexDirection: 'row', paddingVertical: 12, paddingHorizontal: 20, borderRadius: 30, alignItems: 'center', elevation: 4 },
-  fabText: { color: 'white', fontWeight: 'bold', fontSize: 14, marginLeft: 8 },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center', padding: 20 },
-  modalFiltro: { width: '100%', maxWidth: 400, backgroundColor: 'white', borderRadius: 20, padding: 20 },
-  modalFiltroTitulo: { fontSize: 16, fontWeight: 'bold', color: '#111827', marginBottom: 14 },
-  opcionCurso: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12, paddingHorizontal: 14, borderRadius: 12, marginBottom: 6 },
-  opcionCursoActiva: { backgroundColor: '#EFF6FF' },
-  opcionCursoTexto: { color: '#374151', fontSize: 14, fontWeight: '500', flex: 1, marginRight: 8 },
-  opcionCursoTextoActivo: { color: '#2563EB', fontWeight: '700' },
-  sinCursos: { color: '#94A3B8', fontSize: 12, textAlign: 'center', fontStyle: 'italic', paddingVertical: 12 },
+  // Chart: cada barWrapper contiene un parBarras con DOS miniBarBackground
+  // pegadas (entrada izquierda, salida derecha). Cada mini-barra tiene segmentos
+  // apilados igual que antes.
+  chartContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    height: 170,
+    alignItems: 'flex-end',
+    paddingBottom: 10,
+    paddingTop: 30,
+    zIndex: 10,
+  },
+  barWrapper: {
+    alignItems: 'center',
+    flex: 1,
+    position: 'relative',
+  },
+  parBarras: {
+    flexDirection: 'row',
+    gap: 3,
+    marginBottom: 8,
+  },
+  miniBarBackground: {
+    width: 14,
+    height: 120,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 4,
+    justifyContent: 'flex-end',
+    overflow: 'hidden',
+  },
+  barFillSegment: {
+    width: '100%',
+  },
+  //Tooltip a nivel del barWrapper (no del segmento) para evitar el recorte
+  //por overflow:'hidden' del miniBarBackground. Posicionado encima de las barras.
+  tooltipContainerFix: {
+    position: 'absolute',
+    top: -8,
+    left: '50%',
+    transform: [{ translateX: -50 }],
+    alignItems: 'center',
+    width: 100,
+    zIndex: 999,
+  },
+  //Cabecera del grafico (selector de semana, comparar, reset)
+  chartHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  chartHeaderBoton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#DBEAFE',
+    borderRadius: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+  },
+  chartHeaderTexto: {
+    color: '#2563EB',
+    fontWeight: '700',
+    fontSize: 11,
+  },
+  chartCompararLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#64748B',
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  //Header que se monta encima de cada grafico cuando hay comparacion activa
+  //para que se vea claro que semana es cual. La principal lleva fondo azul claro
+  //y la de comparacion fondo amarillo claro (mismo codigo que el icono del menu).
+  chartSemanaHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#DBEAFE',
+    borderRadius: 8,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    marginBottom: 6,
+    alignSelf: 'center',
+  },
+  chartSemanaHeaderTexto: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#1D4ED8',
+  },
+
+  // Estilos del Tooltip
+  tooltipContainer: {
+    position: 'absolute',
+    bottom: '100%',
+    alignItems: 'center',
+    marginBottom: 4,
+    width: 100,
+    zIndex: 999,
+  },
+  tooltipBox: {
+    backgroundColor: '#1E293B',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  tooltipText: {
+    color: 'white',
+    fontSize: 10,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  tooltipArrow: {
+    width: 0,
+    height: 0,
+    backgroundColor: 'transparent',
+    borderStyle: 'solid',
+    borderLeftWidth: 4,
+    borderRightWidth: 4,
+    borderTopWidth: 4,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderTopColor: '#1E293B',
+  },
+
+  barLabel: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#94A3B8',
+  },
+  legendContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 8,
+    flexWrap: 'wrap',
+  },
+  legendGroupTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#475569',
+    marginRight: 8,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 8,
+    marginTop: 4,
+  },
+  legendColor: {
+    width: 12,
+    height: 12,
+    borderRadius: 3,
+    marginRight: 4,
+  },
+  legendLabel: {
+    fontSize: 11,
+    color: '#64748B',
+  },
+  tabsContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#F1F5F9',
+    borderRadius: 12,
+    padding: 4,
+    marginBottom: 12,
+  },
+  tabBoton: {
+    flex: 1,
+    flexDirection: 'row',
+    paddingVertical: 10,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tabBotonActivo: {
+    backgroundColor: '#1D4ED8',
+    elevation: 2,
+  },
+  tabTexto: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  tabTextoActivo: {
+    color: 'white',
+    fontWeight: '700',
+  },
+  filtrosFila: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  filtroBoton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#DBEAFE',
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  filtroTexto: {
+    color: '#2563EB',
+    fontWeight: '700',
+    fontSize: 12,
+    marginRight: 4,
+    flexShrink: 1,
+  },
+  tituloTabla: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  headerTabla: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+    marginTop: 4,
+  },
+  btnRefresh: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#DBEAFE',
+  },
+  btnRefreshTexto: {
+    color: '#2563EB',
+    fontWeight: '700',
+    fontSize: 11,
+    marginLeft: 6,
+  },
+  fila: {
+    backgroundColor: 'white',
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 8,
+    elevation: 1,
+  },
+  filaTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  filaAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F1F5F9',
+    marginRight: 12,
+    overflow: 'hidden',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  filaFoto: {
+    width: '100%',
+    height: '100%',
+  },
+  filaInfo: {
+    flex: 1,
+    marginRight: 8,
+    minWidth: 90,
+  },
+  filaNombre: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  filaSub: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 2,
+    lineHeight: 14,
+  },
+  filaOperadorBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  filaOperadorLabelInline: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#94A3B8',
+  },
+  filaOperadorNombre: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#475569',
+    flexShrink: 1,
+  },
+  //Buscador por nombre: campo de texto con icono y boton para limpiar.
+  //Va dentro de la fila de filtros y se adapta al espacio disponible.
+  buscadorWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#DBEAFE',
+    borderRadius: 10,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    flexGrow: 1,
+    minWidth: 160,
+  },
+  buscadorInput: {
+    flex: 1,
+    fontSize: 12,
+    color: '#1E293B',
+    paddingVertical: 4,
+    //En web, quitamos el outline al focusear
+    ...(Platform.OS === 'web' ? { outlineStyle: 'none' } : {}),
+  },
+  filaDerecha: {
+    alignItems: 'flex-end',
+  },
+  filaHora: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1D4ED8',
+    marginBottom: 4,
+  },
+  badge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    maxWidth: 140,
+  },
+  badgeTexto: {
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  listaVacia: {
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  listaVaciaTexto: {
+    color: '#94A3B8',
+    fontWeight: '600',
+    marginTop: 10,
+    textAlign: 'center',
+  },
+  finLista: {
+    textAlign: 'center',
+    color: '#94A3B8',
+    fontSize: 12,
+    paddingVertical: 16,
+  },
+  fab: {
+    position: 'absolute',
+    right: 20,
+    bottom: 20,
+    backgroundColor: '#1D4ED8',
+    flexDirection: 'row',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 30,
+    alignItems: 'center',
+    elevation: 4,
+  },
+  fabText: {
+    color: 'white',
+    fontWeight: 'bold',
+    fontSize: 14,
+    marginLeft: 8,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalFiltro: {
+    width: '100%',
+    maxWidth: 400,
+    backgroundColor: 'white',
+    borderRadius: 20,
+    padding: 20,
+  },
+  modalFiltroTitulo: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#111827',
+    marginBottom: 14,
+  },
+  opcionCurso: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    marginBottom: 6,
+  },
+  opcionCursoActiva: {
+    backgroundColor: '#EFF6FF',
+  },
+  opcionCursoTexto: {
+    color: '#374151',
+    fontSize: 14,
+    fontWeight: '500',
+    flex: 1,
+    marginRight: 8,
+  },
+  opcionCursoTextoActivo: {
+    color: '#2563EB',
+    fontWeight: '700',
+  },
+  sinCursos: {
+    color: '#94A3B8',
+    fontSize: 12,
+    textAlign: 'center',
+    fontStyle: 'italic',
+    paddingVertical: 12,
+  },
 });

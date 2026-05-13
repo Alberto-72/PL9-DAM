@@ -13,7 +13,7 @@ import {
   Modal,
   ScrollView,
 } from 'react-native';
-import { Feather, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Feather, Ionicons, MaterialCommunityIcons, FontAwesome5 } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import { fetchOdooData } from '../../services/LogInService';
 import { API_ENDPOINTS } from '../../config/api';
@@ -222,26 +222,25 @@ export default function ListScreen({ route, navigation }) {
             </View>
 
             <View style={styles.cardFooter}>
-              <View style={{ flex: 1 }}>
+              <View style={styles.cardFooterTexto}>
                 {type === 'alumnado' ? (
-                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                    <Text style={styles.detailText} numberOfLines={1}>{cursoTexto}</Text>
-                    <Text style={{ marginHorizontal: 6, color: '#CBD5E1' }}>·</Text>
-                    <Feather
-                      name="truck"
-                      size={12}
-                      color={item.can_bus ? '#22C55E' : '#EF4444'}
-                      style={{ marginRight: 4 }}
-                    />
-                    <Text style={[styles.detailText, { color: item.can_bus ? '#22C55E' : '#EF4444', fontWeight: 'bold' }]}>
-                      {item.can_bus ? 'Bus' : 'Sin Bus'}
-                    </Text>
-                  </View>
+                  <Text style={styles.detailText} numberOfLines={2}>{cursoTexto}</Text>
                 ) : (
-                  <Text style={styles.detailText}>{item.email || 'Sin email'}</Text>
+                  <Text style={styles.detailText} numberOfLines={2}>{item.email || 'Sin email'}</Text>
                 )}
               </View>
-              <View style={{ flexDirection: 'row' }}>
+
+              {type === 'alumnado' && (
+                <View style={styles.busIcono}>
+                  <FontAwesome5
+                    name="bus"
+                    size={18}
+                    color={item.can_bus ? '#22C55E' : '#EF4444'}
+                  />
+                </View>
+              )}
+
+              <View style={styles.cardFooterAcciones}>
                 <TouchableOpacity style={styles.btnIconoVerde} onPress={() => irADetalle(item)}>
                   <Feather name="edit-2" size={16} color="#059669" />
                 </TouchableOpacity>
@@ -511,16 +510,30 @@ const styles = StyleSheet.create({
   },
   cardFooter: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
     borderTopWidth: 1,
     borderTopColor: '#F1F5F9',
     paddingTop: 8,
   },
+  cardFooterTexto: {
+    flex: 1,
+    minWidth: 0,
+    marginRight: 8,
+  },
+  busIcono: {
+    width: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 4,
+  },
+  cardFooterAcciones: {
+    flexDirection: 'row',
+  },
   detailText: {
     fontSize: 12,
     color: '#64748B',
     flexShrink: 1,
+    lineHeight: 16,
   },
   btnIconoVerde: {
     backgroundColor: '#ECFDF5',

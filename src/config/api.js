@@ -2,11 +2,21 @@
 //Unico punto de configuracion de red del frontend.
 //Si cambias de red o de servidor, cambia SOLO este archivo.
 
-//Configuracion del servidor Node
-const SERVER_HOST = '10.102.6.220';
-const SERVER_PORT = 3001;
+/////////////////////////////////////////////////////////////////////////
+//Configuracion del servidor Node (PC CLASE)
+// const SERVER_HOST = '10.102.6.220';
+// const SERVER_PORT = 3001;
 
-export const API_BASE_URL = `http://${SERVER_HOST}:${SERVER_PORT}`;
+// export const API_BASE_URL = `http://${SERVER_HOST}:${SERVER_PORT}`;
+
+
+
+
+export const API_BASE_URL = 'http://172.20.10.6:3001';
+
+
+
+
 
 //Timeout por defecto para las peticiones (en ms).
 //Si el servidor no responde en este tiempo, se aborta la peticion.

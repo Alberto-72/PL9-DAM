@@ -18,13 +18,32 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 const upload = multer({ storage: multer.memoryStorage() });
 
+
+
+
+
+// Configuracion antigua (Odoo del centro en clase):
+// const odooConfig = {
+//     url: 'http://10.102.7.16',
+//     port: 8069,
+//     db: 'ControlAcceso',
+//     username: 'albertoroaf@gmail.com',
+//     password: 'AlberPabKil123'
+// };
+
+
+
+
+
 const odooConfig = {
-    url: 'http://10.102.7.16',
-    port: 8069,
-    db: 'ControlAcceso',
-    username: 'albertoroaf@gmail.com',
-    password: 'AlberPabKil123'
+    url: 'http://localhost',
+    port: 8070,
+    db: 'admin',
+    username: 'admin',
+    password: 'admin'
 };
+
+
 
 const CURSOS = [
     ['1ESO', '1 Educacion Secundaria Obligatoria'],
@@ -438,7 +457,16 @@ app.post('/api/login', async (req, res) => {
 });
 
 app.post('/api/register', async (req, res) => {
-    const { uid, mensajeEstado, dateTime, origen_lector } = req.body;
+    //Campos esperados:
+    //  - uid:                requerido (UID de la tarjeta NFC escaneada)
+    //  - mensajeEstado:      requerido (el reg_type)
+    //  - dateTime:           opcional (default: ahora)
+    //  - origen_lector:      opcional ('usb' o 'movil')
+    //  - operador_username:  opcional, username del profesor que opera la app movil
+    //                        (solo aplica si origen_lector === 'movil' y la persona
+    //                        escaneada no es ella misma un profesor)
+    //  - usr_type:           opcional (tentativo, el backend tiene palabra final)
+    const { uid, mensajeEstado, dateTime, origen_lector, operador_username } = req.body;
     const usr_type_recibido = req.body.usr_type;
     if (!uid || !mensajeEstado) return sendError(res, 400, 'Faltan datos obligatorios (uid, mensajeEstado)');
 
@@ -457,12 +485,19 @@ app.post('/api/register', async (req, res) => {
             values.usr_type = 'alumno';
             values.alumno_id = r.persona.id;
         } else if (r.found && r.modelo === 'profesor') {
+            //Profesor escaneando su propia tarjeta: el profesor_id es el escaneado.
+            //Aunque haya operador_username, no lo sobrescribimos: el registro pertenece
+            //al profesor cuya tarjeta paso, no a quien la pasa (que suele ser el mismo).
             values.usr_type = 'profesor';
             values.profesor_id = r.persona.id;
         } else {
             values.usr_type = usr_type_recibido || 'alumno';
         }
 
+        //REGLA: rellenar profesor_id segun origen.
+        //  - Si origen es USB -> siempre lectornfc (lector anonimo, no sabemos quien opera)
+        //  - Si origen es movil Y se ha escaneado un alumno -> el operador_username del logueado
+        //  - Si origen es movil Y se ha escaneado un profesor -> ya esta puesto arriba, no tocar
         if (origen_lector === 'usb') {
             const lectorId = await getLectorNfcId();
             if (lectorId) {
@@ -470,6 +505,24 @@ app.post('/api/register', async (req, res) => {
                 console.log(`Registro origen USB: profesor_id = lectornfc (id ${lectorId})`);
             } else {
                 console.warn("Usuario 'lectornfc' no existe en Odoo. profesor_id queda sin asignar.");
+            }
+        } else if (origen_lector === 'movil' && values.usr_type === 'alumno' && operador_username) {
+            //Profesor X escanea tarjeta de alumno desde su movil: profesor_id = X
+            try {
+                const operadores = await odooExec(
+                    'gestion_entrada.profesor',
+                    'search_read',
+                    [[['username', '=', operador_username]]],
+                    { fields: ['id'], limit: 1 }
+                );
+                if (operadores && operadores.length === 1) {
+                    values.profesor_id = operadores[0].id;
+                    console.log(`Registro origen movil: profesor_id = ${operador_username} (id ${operadores[0].id})`);
+                } else {
+                    console.warn(`Operador '${operador_username}' no encontrado en Odoo. profesor_id queda sin asignar.`);
+                }
+            } catch (e) {
+                console.warn(`Error buscando operador '${operador_username}':`, e.message);
             }
         }
 
@@ -509,24 +562,40 @@ app.get('/api/registros/:uid', async (req, res) => {
 });
 
 app.post('/api/change-password', async (req, res) => {
-    const { username, newPassword } = req.body;
-    if (!username || !newPassword) return sendError(res, 400, 'Username y newPassword son obligatorios');
+    const { username, currentPassword, newPassword } = req.body;
+    if (!username || !currentPassword || !newPassword) {
+        return sendError(res, 400, 'Username, currentPassword y newPassword son obligatorios');
+    }
+
+    if (String(newPassword).length < 4) {
+        return sendError(res, 400, 'La contraseña nueva debe tener al menos 4 caracteres');
+    }
 
     try {
         const found = await odooExec(
             'gestion_entrada.profesor',
             'search_read',
             [[['username', '=', username]]],
-            { fields: ['id'], limit: 1 }
+            { fields: ['id', 'user_pass'], limit: 1 }
         );
 
-        if (!found || found.length === 0) return res.status(404).json({ success: false, message: 'Usuario no encontrado' });
+        if (!found || found.length === 0) {
+            return res.status(404).json({ success: false, message: 'Usuario no encontrado' });
+        }
 
-        const userId = found[0].id;
-        
+        const usuario = found[0];
+
+        const passwordCorrecta = await bcrypt.compare(currentPassword, usuario.user_pass || '');
+        if (!passwordCorrecta) {
+            return res.status(401).json({
+                success: false,
+                code: 'PASSWORD_INCORRECTA',
+                message: 'La contraseña actual no es correcta'
+            });
+        }
+
         const hashedPassword = await bcrypt.hash(newPassword, 10);
-        
-        await odooExec('gestion_entrada.profesor', 'write', [[userId], { user_pass: hashedPassword }]);
+        await odooExec('gestion_entrada.profesor', 'write', [[usuario.id], { user_pass: hashedPassword }]);
 
         console.log(`Contraseña actualizada para ${username}`);
         return res.json({ success: true, message: 'Contraseña actualizada correctamente' });
@@ -674,74 +743,132 @@ const REG_TYPES_SALIDA  = ['salida_anticipada', 'salida_recreo', 'salida_bus',
 const REG_TYPES_ASISTENCIA = ['entrada_puntual', 'entrada_recreo', 'entrada_tardia'];
 const REG_TYPES_INCIDENCIA = ['error', 'no_autorizado'];
 
+//============================================
+//HELPER: chartData para una semana concreta
+//
+//Recibe una fecha YYYY-MM-DD que pertenece a la semana a graficar.
+//Calcula el lunes de esa semana y agrupa los registros del L al V en 4 segmentos
+//por entrada/salida. Devuelve el array de 5 dias listo para pintar.
+//============================================
+async function buildChartDataForWeek(fechaCualquieraDeLaSemana) {
+    //Calculamos el lunes de la semana de la fecha dada
+    const ref = new Date(fechaCualquieraDeLaSemana + 'T00:00:00Z');
+    const diaSem = ref.getUTCDay();  //0 dom, 1 lun, ... 6 sab
+    //Restamos hasta llegar al lunes (si es domingo, restamos 6; si es lunes, 0)
+    const offsetLunes = (diaSem === 0 ? 6 : diaSem - 1);
+    const lunes = new Date(ref);
+    lunes.setUTCDate(ref.getUTCDate() - offsetLunes);
+    const sabado = new Date(lunes);
+    sabado.setUTCDate(lunes.getUTCDate() + 5);  //L+5 = sabado (excluido al filtrar)
+
+    const fechaInicio = lunes.toISOString().split('T')[0] + ' 00:00:00';
+    const fechaFin    = sabado.toISOString().split('T')[0] + ' 00:00:00';
+
+    const records = await odooExec(
+        'gestion_entrada.registro',
+        'search_read',
+        [[['dateTime', '>=', fechaInicio], ['dateTime', '<', fechaFin]]],
+        { fields: ['dateTime', 'reg_type'] }
+    );
+
+    const chartDataMap = {
+        1: { day: 'L', e_puntuales: 0, e_tardias: 0, e_recreo: 0, e_prof: 0, s_regulares: 0, s_anticipadas: 0, s_busrecreo: 0, s_prof: 0 },
+        2: { day: 'M', e_puntuales: 0, e_tardias: 0, e_recreo: 0, e_prof: 0, s_regulares: 0, s_anticipadas: 0, s_busrecreo: 0, s_prof: 0 },
+        3: { day: 'X', e_puntuales: 0, e_tardias: 0, e_recreo: 0, e_prof: 0, s_regulares: 0, s_anticipadas: 0, s_busrecreo: 0, s_prof: 0 },
+        4: { day: 'J', e_puntuales: 0, e_tardias: 0, e_recreo: 0, e_prof: 0, s_regulares: 0, s_anticipadas: 0, s_busrecreo: 0, s_prof: 0 },
+        5: { day: 'V', e_puntuales: 0, e_tardias: 0, e_recreo: 0, e_prof: 0, s_regulares: 0, s_anticipadas: 0, s_busrecreo: 0, s_prof: 0 },
+    };
+
+    (records || []).forEach(record => {
+        if (!record.dateTime) return;
+        const recordDate = new Date(record.dateTime.replace(' ', 'T') + 'Z');
+        const diaSemana = recordDate.getUTCDay();
+        if (diaSemana < 1 || diaSemana > 5) return;
+        const d = chartDataMap[diaSemana];
+        const t = record.reg_type;
+        if (t === 'entrada_puntual')                                  d.e_puntuales++;
+        else if (t === 'entrada_tardia')                              d.e_tardias++;
+        else if (t === 'entrada_recreo')                              d.e_recreo++;
+        else if (t === 'entrada_prof')                                d.e_prof++;
+        else if (t === 'salida_regular' || t === 'salida_anticipada_autorizada') d.s_regulares++;
+        else if (t === 'salida_anticipada' || t === 'no_autorizado')             d.s_anticipadas++;
+        else if (t === 'salida_bus' || t === 'salida_recreo')                    d.s_busrecreo++;
+        else if (t === 'salida_prof')                                            d.s_prof++;
+    });
+
+    return {
+        lunes: lunes.toISOString().split('T')[0],
+        viernes: new Date(lunes.getTime() + 4 * 86400000).toISOString().split('T')[0],
+        chartData: [1, 2, 3, 4, 5].map(dayIndex => {
+            const d = chartDataMap[dayIndex];
+            return {
+                day: d.day,
+                entrada: {
+                    segments: [
+                        { value: d.e_puntuales * 5, color: '#3B82F6', label: 'Puntuales'  },
+                        { value: d.e_tardias   * 5, color: '#EF4444', label: 'Tardias'    },
+                        { value: d.e_recreo    * 5, color: '#10B981', label: 'Recreo'     },
+                        { value: d.e_prof      * 5, color: '#A855F7', label: 'Profesores' },
+                    ],
+                },
+                salida: {
+                    segments: [
+                        { value: d.s_regulares  * 5, color: '#3B82F6', label: 'Regulares'   },
+                        { value: d.s_anticipadas* 5, color: '#EF4444', label: 'Anticipadas' },
+                        { value: d.s_busrecreo  * 5, color: '#10B981', label: 'Transporte/Recreo'  },
+                        { value: d.s_prof       * 5, color: '#EAB308', label: 'Profesores' },
+                    ],
+                },
+            };
+        }),
+    };
+}
+
 app.get('/api/dashboard', async (req, res) => {
     try {
         const totalAlumnos = await odooExec('gestion_entrada.alumno', 'search_count', [[]]);
 
         const hoy = new Date();
-        const haceUnaSemana = new Date();
-        haceUnaSemana.setDate(hoy.getDate() - 7);
-        const dateStr = haceUnaSemana.toISOString().split('T')[0] + ' 00:00:00';
+        const hoyStr = hoy.toISOString().split('T')[0];
 
-        const records = await odooExec(
+        //KPIs de hoy (asistencia / incidencias) - se calcula siempre desde "hoy real"
+        const recordsHoy = await odooExec(
             'gestion_entrada.registro',
             'search_read',
-            [[['dateTime', '>=', dateStr]]],
-            { fields: ['dateTime', 'reg_type'] }
+            [[['dateTime', '>=', hoyStr + ' 00:00:00'], ['dateTime', '<=', hoyStr + ' 23:59:59']]],
+            { fields: ['reg_type'] }
         );
-
         let asistenciaHoy = 0, incidenciasHoy = 0;
-        const hoyStr = hoy.toISOString().split('T')[0];
-        const chartDataMap = {
-            1: { day: 'L', justificadas: 0, injustificadas: 0, otras: 0 },
-            2: { day: 'M', justificadas: 0, injustificadas: 0, otras: 0 },
-            3: { day: 'X', justificadas: 0, injustificadas: 0, otras: 0 },
-            4: { day: 'J', justificadas: 0, injustificadas: 0, otras: 0 },
-            5: { day: 'V', justificadas: 0, injustificadas: 0, otras: 0 },
-        };
-
-        (records || []).forEach(record => {
-            if (!record.dateTime) return;
-            const recordDate = new Date(record.dateTime.replace(' ', 'T') + 'Z');
-            const recordDateStr = recordDate.toISOString().split('T')[0];
-            const diaSemana = recordDate.getDay();
-
-            if (recordDateStr === hoyStr) {
-                if (REG_TYPES_ASISTENCIA.includes(record.reg_type)) asistenciaHoy++;
-                if (REG_TYPES_INCIDENCIA.includes(record.reg_type)) incidenciasHoy++;
-            }
-
-            if (diaSemana >= 1 && diaSemana <= 5 && recordDate >= haceUnaSemana) {
-                const dayData = chartDataMap[diaSemana];
-                if (['salida_regular', 'salida_anticipada_autorizada'].includes(record.reg_type)) {
-                    dayData.justificadas++;
-                }
-                else if (['salida_anticipada', 'no_autorizado'].includes(record.reg_type)) {
-                    dayData.injustificadas++;
-                }
-                else if (['salida_bus', 'salida_recreo'].includes(record.reg_type)) {
-                    dayData.otras++;
-                }
-            }
+        (recordsHoy || []).forEach(r => {
+            if (REG_TYPES_ASISTENCIA.includes(r.reg_type)) asistenciaHoy++;
+            if (REG_TYPES_INCIDENCIA.includes(r.reg_type)) incidenciasHoy++;
         });
-
         const asistenciaMedia = totalAlumnos > 0
             ? Math.min(Math.round((asistenciaHoy / totalAlumnos) * 100), 100)
             : 0;
 
-        const chartData = [1, 2, 3, 4, 5].map(dayIndex => ({
-            day: chartDataMap[dayIndex].day,
-            segments: [
-                { value: chartDataMap[dayIndex].justificadas * 5, color: '#3B82F6' },
-                { value: chartDataMap[dayIndex].injustificadas * 5, color: '#EF4444' },
-                { value: chartDataMap[dayIndex].otras * 5, color: '#10B981' }
-            ]
-        }));
+        //Semana principal:
+        //  - si llega ?semana=YYYY-MM-DD, esa
+        //  - si no, la semana actual (hoy)
+        const semanaParam = req.query.semana && /^\d{4}-\d{2}-\d{2}$/.test(req.query.semana)
+            ? req.query.semana
+            : hoyStr;
+        const semanaData = await buildChartDataForWeek(semanaParam);
+
+        //Semana de comparacion (opcional): si llega ?semana2=YYYY-MM-DD
+        let semana2Data = null;
+        if (req.query.semana2 && /^\d{4}-\d{2}-\d{2}$/.test(req.query.semana2)) {
+            semana2Data = await buildChartDataForWeek(req.query.semana2);
+        }
 
         return res.json({
             success: true,
             kpis: { asistenciaHoy, incidenciasHoy, asistenciaMedia: `${asistenciaMedia}%` },
-            chartData
+            semana: semanaData,
+            semana2: semana2Data,
+            //Compatibilidad hacia atras: aun servimos chartData simple para que
+            //clientes antiguos no rompan.
+            chartData: semanaData.chartData,
         });
     } catch (err) {
         return sendError(res, 500, err.message);
@@ -752,6 +879,8 @@ app.get('/api/registros-paginado', async (req, res) => {
     const tipo   = String(req.query.tipo || '').toLowerCase();
     const fecha  = String(req.query.fecha || '').trim();
     const curso  = req.query.curso ? String(req.query.curso).trim() : null;
+    const usrTypeFiltro = req.query.usr_type ? String(req.query.usr_type).trim() : null;
+    const buscar = req.query.buscar ? String(req.query.buscar).trim() : null;
     const limit  = Math.min(parseInt(req.query.limit, 10) || 50, 200);
     const offset = parseInt(req.query.offset, 10) || 0;
 
@@ -797,17 +926,25 @@ app.get('/api/registros-paginado', async (req, res) => {
             'search_read',
             [domain],
             {
-                fields: ['uid', 'usr_type', 'reg_type', 'dateTime'],
+                //Anadimos profesor_id (Many2one -> viene como [id, "Nombre Apellido"])
+                fields: ['uid', 'usr_type', 'reg_type', 'dateTime', 'profesor_id'],
                 order: 'dateTime desc',
                 limit: 1000,
             }
         ) || [];
 
-        const filtrados = todosRegistros.filter(r => regTypes.includes(r.reg_type));
-        const total = filtrados.length;
-        const registros = filtrados.slice(offset, offset + limit);
+        //Primer filtro: solo entradas o solo salidas
+        const filtradosPorTipo = todosRegistros.filter(r => regTypes.includes(r.reg_type));
 
-        const uidsUnicos = [...new Set(registros.map(r => r.uid).filter(Boolean))];
+        //Necesitamos enriquecer ANTES de aplicar usr_type/buscar porque esos
+        //filtros dependen del modelo (alumno/profesor) y del nombre real resueltos
+        //a partir del UID. La paginacion tambien se hace despues, sobre los datos
+        //ya filtrados.
+        //
+        //Como esto puede ser hasta ~1000 registros por dia, lo optimizamos:
+        //usamos un set de UIDs unicos (mismo alumno escaneado N veces solo se
+        //busca 1 vez). El cache buscarPersonaPorUid hace el resto.
+        const uidsUnicos = [...new Set(filtradosPorTipo.map(r => r.uid).filter(Boolean))];
 
         const fieldsAlumno = ['name', 'surname', 'school_year', 'photo'];
         const fieldsProfesor = ['name', 'surname', 'photo'];
@@ -825,10 +962,19 @@ app.get('/api/registros-paginado', async (req, res) => {
             indicePorUid[uid] = r;
         }
 
-        const enriquecidos = registros.map(r => {
+        //Enriquecemos todos los registros del dia (los filtrados por tipo)
+        const enriquecidosTodos = filtradosPorTipo.map(r => {
             const res = indicePorUid[r.uid];
             const persona = (res && res.found) ? res.persona : null;
             const modelo  = (res && res.found) ? res.modelo  : null;
+
+            //profesor_id en Odoo (Many2one) viene como [id, "Nombre Apellido"]
+            let operadorNombre = null;
+            let operadorIdReg = null;
+            if (Array.isArray(r.profesor_id) && r.profesor_id.length >= 2) {
+                operadorIdReg = r.profesor_id[0];
+                operadorNombre = r.profesor_id[1];
+            }
 
             return {
                 id: r.id,
@@ -840,8 +986,29 @@ app.get('/api/registros-paginado', async (req, res) => {
                 curso:       (persona && persona.school_year) ? persona.school_year : null,
                 cursoLargo:  (persona && persona.school_year) ? getCursoCompleto(persona.school_year) : null,
                 photo:       persona ? (persona.photo || null) : null,
+                operadorNombre,
+                operadorId: operadorIdReg,
             };
         });
+
+        //Filtros que requieren los datos enriquecidos:
+        //  - usr_type ('alumno' o 'profesor')
+        //  - buscar (case-insensitive en nombre + operadorNombre)
+        let filtradosFinales = enriquecidosTodos;
+        if (usrTypeFiltro === 'alumno' || usrTypeFiltro === 'profesor') {
+            filtradosFinales = filtradosFinales.filter(r => r.usr_type === usrTypeFiltro);
+        }
+        if (buscar) {
+            const buscarLower = buscar.toLowerCase();
+            filtradosFinales = filtradosFinales.filter(r => {
+                const enNombre   = (r.nombre || '').toLowerCase().includes(buscarLower);
+                const enOperador = (r.operadorNombre || '').toLowerCase().includes(buscarLower);
+                return enNombre || enOperador;
+            });
+        }
+
+        const total = filtradosFinales.length;
+        const enriquecidos = filtradosFinales.slice(offset, offset + limit);
 
         return res.json({
             success: true,
@@ -850,6 +1017,68 @@ app.get('/api/registros-paginado', async (req, res) => {
             offset,
             limit,
         });
+    } catch (err) {
+        return sendError(res, 500, err.message);
+    }
+});
+
+app.post('/api/vincular-nfc', async (req, res) => {
+    const { id, tipo, uid } = req.body;
+
+    if (!id || !tipo || !uid) {
+        return sendError(res, 400, 'Faltan datos obligatorios (id, tipo, uid)');
+    }
+    if (tipo !== 'alumno' && tipo !== 'profesor') {
+        return sendError(res, 400, "tipo debe ser 'alumno' o 'profesor'");
+    }
+
+    try {
+        const uidLimpio = String(uid).trim().toUpperCase();
+        const idNum = parseInt(id, 10);
+
+        const existeAlumno = await odooExec(
+            'gestion_entrada.alumno',
+            'search_read',
+            [[['uid', '=', uidLimpio]]],
+            { fields: ['id', 'name', 'surname'], limit: 1 }
+        );
+        if (existeAlumno && existeAlumno.length > 0) {
+            const ocupado = existeAlumno[0];
+            const esEsteMismo = tipo === 'alumno' && ocupado.id === idNum;
+            if (!esEsteMismo) {
+                return res.status(409).json({
+                    success: false,
+                    code: 'UID_EN_USO',
+                    message: `UID ya asignado a ${ocupado.name} ${ocupado.surname || ''}`.trim(),
+                    ocupado: { id: ocupado.id, tipo: 'alumno', nombre: `${ocupado.name} ${ocupado.surname || ''}`.trim() }
+                });
+            }
+        }
+
+        const existeProfesor = await odooExec(
+            'gestion_entrada.profesor',
+            'search_read',
+            [[['uid', '=', uidLimpio]]],
+            { fields: ['id', 'name', 'surname'], limit: 1 }
+        );
+        if (existeProfesor && existeProfesor.length > 0) {
+            const ocupado = existeProfesor[0];
+            const esEsteMismo = tipo === 'profesor' && ocupado.id === idNum;
+            if (!esEsteMismo) {
+                return res.status(409).json({
+                    success: false,
+                    code: 'UID_EN_USO',
+                    message: `UID ya asignado a ${ocupado.name} ${ocupado.surname || ''}`.trim(),
+                    ocupado: { id: ocupado.id, tipo: 'profesor', nombre: `${ocupado.name} ${ocupado.surname || ''}`.trim() }
+                });
+            }
+        }
+
+        const modelo = tipo === 'alumno' ? 'gestion_entrada.alumno' : 'gestion_entrada.profesor';
+        await odooExec(modelo, 'write', [[idNum], { uid: uidLimpio }]);
+
+        console.log(`Vinculacion OK: ${tipo} id=${idNum} -> uid=${uidLimpio}`);
+        return res.json({ success: true, message: 'NFC vinculado correctamente' });
     } catch (err) {
         return sendError(res, 500, err.message);
     }
