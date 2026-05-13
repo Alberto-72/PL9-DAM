@@ -5,7 +5,7 @@ const multer = require('multer');
 const csvParser = require('csv-parser');
 const { Readable } = require('stream');
 const Odoo = require('odoo-xmlrpc');
-const bcrypt = require('bcrypt'); // NUEVO: Librería para hashear contraseñas
+const bcrypt = require('bcrypt');
 
 const app = express();
 app.use(cors({
@@ -329,7 +329,6 @@ app.get('/api/profesores', async (req, res) => {
     }
 });
 
-// NUEVO: Hasheo en creación de profesor
 app.post('/api/profesores', async (req, res) => {
     const { name, surname, nif, email, birth_date, username, user_pass, photo, uid, is_management } = req.body;
     if (!name || !surname || !nif || !email || !birth_date || !username || !user_pass) {
@@ -337,12 +336,11 @@ app.post('/api/profesores', async (req, res) => {
     }
 
     try {
-        // Encriptar la contraseña (salt de 10 rondas es estándar)
         const hashedPassword = await bcrypt.hash(user_pass, 10);
 
         const values = {
             name, surname, nif, email, birth_date, username, 
-            user_pass: hashedPassword, // Guardamos el hash, no el texto plano
+            user_pass: hashedPassword, 
             is_management: is_management === undefined ? false : !!is_management,
         };
         if (photo !== undefined) values.photo = photo;
@@ -356,7 +354,6 @@ app.post('/api/profesores', async (req, res) => {
     }
 });
 
-// NUEVO: Hasheo en actualización de profesor si se envía nueva contraseña
 app.put('/api/profesores/:id', async (req, res) => {
     const id = parseInt(req.params.id, 10);
     if (isNaN(id)) return sendError(res, 400, 'ID invalido');
@@ -367,7 +364,6 @@ app.put('/api/profesores/:id', async (req, res) => {
         
         for (const k of allowed) {
             if (req.body[k] !== undefined) {
-                // Si el campo a actualizar es la contraseña, la hasheamos primero
                 if (k === 'user_pass') {
                     values[k] = await bcrypt.hash(req.body[k], 10);
                 } else {
@@ -399,7 +395,6 @@ app.delete('/api/profesores/:id', async (req, res) => {
     }
 });
 
-// NUEVO: Verificación de contraseña hasheada en el Login
 app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
     if (!username || !password) return sendError(res, 400, 'Faltan credenciales');
@@ -407,7 +402,6 @@ app.post('/api/login', async (req, res) => {
     console.log(`\nIntento de login para usuario: ${username}`);
 
     try {
-        // 1. Buscamos al usuario solo por username
         const result = await odooExec(
             'gestion_entrada.profesor',
             'search_read',
@@ -418,7 +412,6 @@ app.post('/api/login', async (req, res) => {
         if (result && result.length > 0) {
             const userData = result[0];
             
-            // 2. Comparamos la contraseña en texto plano recibida con el hash guardado
             const isMatch = await bcrypt.compare(password, userData.user_pass);
 
             if (isMatch) {
@@ -438,7 +431,6 @@ app.post('/api/login', async (req, res) => {
             }
         }
 
-        // Falla tanto si no existe el usuario como si la contraseña no hace match
         return res.status(401).json({ success: false, message: 'Usuario o contraseña no válidos' });
     } catch (err) {
         return sendError(res, 500, err.message);
@@ -516,7 +508,6 @@ app.get('/api/registros/:uid', async (req, res) => {
     }
 });
 
-// NUEVO: Hasheo en el endpoint específico de cambio de contraseña
 app.post('/api/change-password', async (req, res) => {
     const { username, newPassword } = req.body;
     if (!username || !newPassword) return sendError(res, 400, 'Username y newPassword son obligatorios');
@@ -533,7 +524,6 @@ app.post('/api/change-password', async (req, res) => {
 
         const userId = found[0].id;
         
-        // Encriptamos la nueva contraseña antes de guardarla
         const hashedPassword = await bcrypt.hash(newPassword, 10);
         
         await odooExec('gestion_entrada.profesor', 'write', [[userId], { user_pass: hashedPassword }]);
@@ -577,7 +567,6 @@ app.get('/api/user/:username', async (req, res) => {
     }
 });
 
-// NUEVO: Hasheo en la importación masiva CSV de profesores
 app.post('/api/importar-csv/:tipo', upload.single('archivo'), async (req, res) => {
     const tipo = req.params.tipo;
     if (!['alumnos', 'profesores'].includes(tipo)) {
@@ -617,7 +606,6 @@ app.post('/api/importar-csv/:tipo', upload.single('archivo'), async (req, res) =
                 if (k === 'can_bus' || k === 'is_management') {
                     values[k] = ['true', '1', 'si', 'sí', 'yes'].includes(String(fila[k]).toLowerCase().trim());
                 } else if (k === 'user_pass') {
-                    // Hashear la contraseña que viene en el CSV
                     values[k] = await bcrypt.hash(fila[k], 10);
                 } else {
                     values[k] = fila[k];

@@ -20,57 +20,40 @@ import { FILTRO_TODOS, getNombreCurso } from '../../config/cursos';
 
 const PAGE_SIZE = 50;
 
-//Etiquetas legibles para cada reg_type. Coinciden con la seleccion definida
-//en el modelo gestion_entrada.registro de Odoo (actualizado).
 const ETIQUETAS_REG_TYPE = {
-  //Entradas
   entrada_puntual:              'Entrada Puntual',
   entrada_recreo:               'Entrada Recreo',
   entrada_tardia:               'Entrada Tardia',
   entrada_prof:                 'Entrada Profesor',
-  //Salidas
   salida_anticipada:            'Salida Anticipada',
   salida_recreo:                'Salida Recreo',
   salida_bus:                   'Salida Bus',
   salida_anticipada_autorizada: 'Salida Anticipada Autorizada',
   salida_regular:               'Salida Regular',
   salida_prof:                  'Salida Profesor',
-  //Incidencias
   error:                        'Incidencia',
   no_autorizado:                'No Autorizado',
 };
 
-//Colores por reg_type. Verde = OK, ambar = atencion, rojo = problema, azul = neutro
 const COLORES_REG_TYPE = {
-  //Entradas: verde si puntual, ambar si tardia
   entrada_puntual:              { bg: '#DCFCE7', fg: '#15803D' },
   entrada_recreo:               { bg: '#DCFCE7', fg: '#15803D' },
   entrada_tardia:               { bg: '#FEF9C3', fg: '#A16207' },
   entrada_prof:                 { bg: '#E0E7FF', fg: '#3730A3' },
-  //Salidas regulares (azul/verde)
   salida_regular:               { bg: '#DCFCE7', fg: '#15803D' },
   salida_bus:                   { bg: '#DBEAFE', fg: '#1D4ED8' },
   salida_recreo:                { bg: '#DBEAFE', fg: '#1D4ED8' },
   salida_prof:                  { bg: '#E0E7FF', fg: '#3730A3' },
-  //Salidas anticipadas: ambar si autorizada, rojo si no
   salida_anticipada_autorizada: { bg: '#FEF9C3', fg: '#A16207' },
   salida_anticipada:            { bg: '#FEF9C3', fg: '#A16207' },
-  //Incidencias
   no_autorizado:                { bg: '#FEE2E2', fg: '#B91C1C' },
   error:                        { bg: '#FEE2E2', fg: '#B91C1C' },
 };
 
-//Odoo guarda dateTime en UTC con formato "YYYY-MM-DD HH:MM:SS".
-//Lo convertimos a hora local del navegador para que coincida con lo que muestra
-//la vista web de Odoo (en Canarias UTC+1 en horario de verano, UTC+0 en invierno).
 function formatearHora(dateTime) {
   if (!dateTime) return '';
-  //El formato de Odoo no incluye zona horaria, asi que indicamos explicitamente
-  //que es UTC poniendo el sufijo 'Z'. Si no lo hacemos, JavaScript lo interpreta
-  //como hora local y la conversion sale mal.
   const fechaUTC = new Date(String(dateTime).replace(' ', 'T') + 'Z');
   if (isNaN(fechaUTC.getTime())) return '';
-  //toLocaleTimeString respeta la zona horaria del dispositivo
   const hh = String(fechaUTC.getHours()).padStart(2, '0');
   const mm = String(fechaUTC.getMinutes()).padStart(2, '0');
   return `${hh}:${mm}`;
@@ -91,7 +74,6 @@ function formatearFechaParaApp(yyyymmdd) {
 }
 
 export default function DashboardScreen() {
-  //KPIs y grafico
   const [loadingKpis, setLoadingKpis] = useState(true);
   const [kpis, setKpis] = useState({
     asistenciaHoy: 0,
@@ -100,7 +82,8 @@ export default function DashboardScreen() {
   });
   const [chartData, setChartData] = useState([]);
 
-  //Estado de las tablas
+  const [tooltip, setTooltip] = useState(null);
+
   const [tipoActivo, setTipoActivo] = useState('entrada');
   const [fecha, setFecha] = useState(fechaHoy());
   const [cursoFiltro, setCursoFiltro] = useState(FILTRO_TODOS);
@@ -111,7 +94,6 @@ export default function DashboardScreen() {
   const [cargando, setCargando]   = useState({ entrada: false, salida: false });
   const [cursosVistos, setCursosVistos] = useState(new Set());
 
-  //Refs para control interno sin disparar re-renders (fix bucle infinito)
   const offsetsRef = useRef({ entrada: 0, salida: 0 });
   const cargandoRef = useRef({ entrada: false, salida: false });
   const fetchTokenRef = useRef(0);
@@ -134,7 +116,6 @@ export default function DashboardScreen() {
     cargarKpis();
   }, [cargarKpis]);
 
-  //Carga de registros estable (no se invalida al cambiar estado de datos)
   const cargarRegistros = useCallback(async (tipo, reset = false) => {
     if (cargandoRef.current[tipo]) return;
 
@@ -158,7 +139,6 @@ export default function DashboardScreen() {
       const url = `${API_BASE_URL}/api/registros-paginado?${params.toString()}`;
       const data = await apiClient.get(url);
 
-      //Descartamos si el token cambio mientras estabamos en vuelo
       if (miToken !== fetchTokenRef.current) return;
 
       if (data && data.success) {
@@ -188,23 +168,19 @@ export default function DashboardScreen() {
     }
   }, [fecha, cursoFiltro]);
 
-  //Cambio de fecha o curso: invalidamos el token, reseteamos datos y recargamos
   useEffect(() => {
     fetchTokenRef.current += 1;
     offsetsRef.current = { entrada: 0, salida: 0 };
     setRegistros({ entrada: [], salida: [] });
     setTotales({ entrada: 0, salida: 0 });
     cargarRegistros(tipoActivo, true);
-    //eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fecha, cursoFiltro]);
+  }, [fecha, cursoFiltro, cargarRegistros, tipoActivo]);
 
-  //Cambio de tab: si la tabla nueva esta vacia, la cargamos
   useEffect(() => {
     if (registros[tipoActivo].length === 0 && !cargandoRef.current[tipoActivo]) {
       cargarRegistros(tipoActivo, true);
     }
-    //eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tipoActivo]);
+  }, [tipoActivo, registros, cargarRegistros]);
 
   const cargarSiguientePagina = useCallback(() => {
     const enPantalla = registros[tipoActivo].length;
@@ -215,17 +191,6 @@ export default function DashboardScreen() {
     cargarRegistros(tipoActivo, false);
   }, [tipoActivo, registros, totales, cargarRegistros]);
 
-  //============================================
-  //AUTO-REFRESH cada 10 segundos
-  //
-  //IMPORTANTE: no incluimos cargarRegistros directamente en el array de dependencias
-  //del setInterval porque la funcion cambia cada vez que cambia fecha/cursoFiltro,
-  //y eso reiniciaria el timer. En lugar de eso, guardamos la version mas reciente
-  //en un ref y la leemos al disparar el interval.
-  //
-  //Tiene que estar DESPUES de cargarRegistros y cargarKpis para no chocar con la
-  //"temporal dead zone" de const en JS.
-  //============================================
   const cargarRegistrosRef = useRef(cargarRegistros);
   const cargarKpisRef = useRef(cargarKpis);
   useEffect(() => {
@@ -234,17 +199,13 @@ export default function DashboardScreen() {
   }, [cargarRegistros, cargarKpis]);
 
   useEffect(() => {
-    //Refresca cada 10 segundos en background. 10s es un equilibrio entre
-    //responsividad y no saturar Odoo con peticiones constantes.
     const id = setInterval(() => {
       cargarKpisRef.current();
-      //Solo refresca el tab activo. El inactivo se refrescara cuando se abra.
       cargarRegistrosRef.current(tipoActivo, true);
     }, 10000);
     return () => clearInterval(id);
   }, [tipoActivo]);
 
-  //Refresco manual al pulsar el boton "Actualizar"
   const refrescarManual = useCallback(() => {
     cargarKpisRef.current();
     cargarRegistrosRef.current(tipoActivo, true);
@@ -277,6 +238,26 @@ export default function DashboardScreen() {
         ]
       );
     }
+  };
+
+  const handleMouseEnter = (dayIndex, segIndex, rawValue, label) => {
+      if (Platform.OS === 'web') {
+          const count = rawValue / 5;
+          
+          if(count === 0) return;
+
+          setTooltip({
+              dayIndex,
+              segIndex,
+              text: `${count} ${label}`
+          });
+      }
+  };
+
+  const handleMouseLeave = () => {
+      if (Platform.OS === 'web') {
+          setTooltip(null);
+      }
   };
 
   const renderRegistro = ({ item }) => {
@@ -335,18 +316,43 @@ export default function DashboardScreen() {
           </View>
 
           <View style={styles.chartContainer}>
-            {chartData.map((item, i) => (
-              <View key={i} style={styles.barWrapper}>
+            {chartData.map((item, dIndex) => (
+              <View key={dIndex} style={styles.barWrapper}>
                 <View style={styles.barBackground}>
-                  {item.segments.map((seg, idx) => (
-                    <View
-                      key={idx}
-                      style={[
-                        styles.barFillSegment,
-                        { height: `${Math.min(seg.value, 100)}%`, backgroundColor: seg.color }
-                      ]}
-                    />
-                  ))}
+                  {item.segments.map((seg, sIndex) => {
+                      // Determinar etiqueta basada en el color
+                      let segLabel = '';
+                      if(seg.color === '#3B82F6') segLabel = 'Regulares';
+                      if(seg.color === '#EF4444') segLabel = 'Anticipadas';
+                      if(seg.color === '#10B981') segLabel = 'Bus/Recreo';
+
+                      const isHovered = tooltip && tooltip.dayIndex === dIndex && tooltip.segIndex === sIndex;
+
+                      return (
+                        <View
+                          key={sIndex}
+                          onMouseEnter={() => handleMouseEnter(dIndex, sIndex, seg.value, segLabel)}
+                          onMouseLeave={handleMouseLeave}
+                          style={[
+                            styles.barFillSegment,
+                            { 
+                                height: `${Math.min(seg.value, 100)}%`, 
+                                backgroundColor: seg.color,
+                                opacity: isHovered ? 0.8 : 1
+                            }
+                          ]}
+                        >
+                            {isHovered && (
+                                <View style={styles.tooltipContainer}>
+                                    <View style={styles.tooltipBox}>
+                                        <Text style={styles.tooltipText}>{tooltip.text}</Text>
+                                    </View>
+                                    <View style={styles.tooltipArrow} />
+                                </View>
+                            )}
+                        </View>
+                      )
+                  })}
                 </View>
                 <Text style={styles.barLabel}>{item.day}</Text>
               </View>
@@ -414,7 +420,6 @@ export default function DashboardScreen() {
           style={styles.btnRefresh}
           onPress={refrescarManual}
           activeOpacity={0.7}
-          //Indicacion visual de que esta cargando ahora mismo
           disabled={cargando[tipoActivo]}
         >
           <Feather
@@ -576,10 +581,52 @@ const styles = StyleSheet.create({
   card: { backgroundColor: 'white', padding: 20, borderRadius: 16, elevation: 2, marginBottom: 16 },
   cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 24 },
   cardTitle: { fontSize: 14, fontWeight: 'bold', color: '#334155' },
-  chartContainer: { flexDirection: 'row', justifyContent: 'space-around', height: 150, alignItems: 'flex-end', paddingBottom: 10 },
+  
+  // Modificaciones para el tooltip
+  chartContainer: { flexDirection: 'row', justifyContent: 'space-around', height: 150, alignItems: 'flex-end', paddingBottom: 10, zIndex: 10 },
   barWrapper: { alignItems: 'center', flex: 1 },
-  barBackground: { width: 30, height: 120, backgroundColor: '#F1F5F9', borderRadius: 6, justifyContent: 'flex-end', overflow: 'hidden', marginBottom: 8 },
-  barFillSegment: { width: '100%' },
+  barBackground: { width: 30, height: 120, backgroundColor: '#F1F5F9', borderRadius: 6, justifyContent: 'flex-end', marginBottom: 8 },
+  barFillSegment: { width: '100%', position: 'relative', alignItems: 'center' },
+  
+  // Estilos del Tooltip
+  tooltipContainer: {
+      position: 'absolute',
+      bottom: '100%', 
+      alignItems: 'center',
+      marginBottom: 4, 
+      width: 100, 
+      zIndex: 999, 
+  },
+  tooltipBox: {
+      backgroundColor: '#1E293B',
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+      borderRadius: 6,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.25,
+      shadowRadius: 3.84,
+      elevation: 5,
+  },
+  tooltipText: {
+      color: 'white',
+      fontSize: 10,
+      fontWeight: 'bold',
+      textAlign: 'center',
+  },
+  tooltipArrow: {
+      width: 0,
+      height: 0,
+      backgroundColor: 'transparent',
+      borderStyle: 'solid',
+      borderLeftWidth: 4,
+      borderRightWidth: 4,
+      borderTopWidth: 4,
+      borderLeftColor: 'transparent',
+      borderRightColor: 'transparent',
+      borderTopColor: '#1E293B',
+  },
+
   barLabel: { fontSize: 12, fontWeight: 'bold', color: '#94A3B8' },
   legendContainer: { flexDirection: 'row', justifyContent: 'center', marginTop: 15, flexWrap: 'wrap' },
   legendItem: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 8, marginTop: 4 },
@@ -594,29 +641,9 @@ const styles = StyleSheet.create({
   filtroBoton: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#EFF6FF', borderWidth: 1, borderColor: '#DBEAFE', borderRadius: 10, paddingVertical: 8, paddingHorizontal: 12 },
   filtroTexto: { color: '#2563EB', fontWeight: '700', fontSize: 12, marginRight: 4, flexShrink: 1 },
   tituloTabla: { fontSize: 13, fontWeight: '700', color: '#1E293B' },
-  headerTabla: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-    marginTop: 4,
-  },
-  btnRefresh: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#EFF6FF',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#DBEAFE',
-  },
-  btnRefreshTexto: {
-    color: '#2563EB',
-    fontWeight: '700',
-    fontSize: 11,
-    marginLeft: 6,
-  },
+  headerTabla: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, marginTop: 4 },
+  btnRefresh: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#EFF6FF', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: '#DBEAFE' },
+  btnRefreshTexto: { color: '#2563EB', fontWeight: '700', fontSize: 11, marginLeft: 6 },
   fila: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', padding: 12, borderRadius: 12, marginBottom: 8, elevation: 1 },
   filaAvatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#F1F5F9', marginRight: 12, overflow: 'hidden', justifyContent: 'center', alignItems: 'center' },
   filaFoto: { width: '100%', height: '100%' },
