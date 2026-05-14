@@ -12,7 +12,7 @@
 
 
 
-export const API_BASE_URL = 'http://172.20.10.6:3001';
+export const API_BASE_URL = 'http://10.102.6.220:3001';
 
 
 

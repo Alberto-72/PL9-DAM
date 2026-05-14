@@ -18,32 +18,13 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 const upload = multer({ storage: multer.memoryStorage() });
 
-
-
-
-
-// Configuracion antigua (Odoo del centro en clase):
-// const odooConfig = {
-//     url: 'http://10.102.7.16',
-//     port: 8069,
-//     db: 'ControlAcceso',
-//     username: 'albertoroaf@gmail.com',
-//     password: 'AlberPabKil123'
-// };
-
-
-
-
-
 const odooConfig = {
-    url: 'http://localhost',
-    port: 8070,
-    db: 'admin',
-    username: 'admin',
-    password: 'admin'
+    url: 'http://10.102.7.16',
+    port: 8069,
+    db: 'ControlAcceso',
+    username: 'albertoroaf@gmail.com',
+    password: 'AlberPabKil123'
 };
-
-
 
 const CURSOS = [
     ['1ESO', '1 Educacion Secundaria Obligatoria'],
@@ -97,14 +78,30 @@ function sendError(res, status, message, extra = {}) {
     return res.status(status).json({ success: false, message, ...extra });
 }
 
+//El lector USB lee un prefijo del UID que lee el movil. Para que ambos lectores
+//cuenten como la misma tarjeta, normalizamos cualquier UID a su prefijo corto
+//(longitud que lee el USB). Asi un UID largo de movil y su version corta de USB
+//producen el mismo valor comparable.
+const LONGITUD_UID_CORTO = 8;
+function prefijoUid(uid) {
+    if (!uid) return '';
+    return String(uid).trim().toUpperCase().substring(0, LONGITUD_UID_CORTO);
+}
+
 async function buscarPersonaPorUid(uid, fieldsAlumno, fieldsProfesor) {
     if (!uid) return { found: false, ambiguous: false, persona: null, modelo: null };
+
+    //Todos los UIDs en la BD estan guardados en formato corto (ver prefijoUid).
+    //Normalizamos la lectura entrante igual y comparamos por igualdad exacta.
+    //Esto evita falsos positivos: un UID corto nunca puede coincidir por error
+    //con el prefijo de otra tarjeta distinta.
+    const uidCorto = prefijoUid(uid);
 
     try {
         const alumnos = await odooExec(
             'gestion_entrada.alumno',
             'search_read',
-            [[['uid', 'ilike', uid]]],
+            [[['uid', '=', uidCorto]]],
             { fields: fieldsAlumno, limit: 2 }
         );
         if (alumnos && alumnos.length === 1) {
@@ -114,14 +111,14 @@ async function buscarPersonaPorUid(uid, fieldsAlumno, fieldsProfesor) {
             return { found: false, ambiguous: true, persona: null, modelo: null };
         }
     } catch (e) {
-        console.warn('Error buscando alumno exacto:', e.message);
+        console.warn('Error buscando alumno por uid:', e.message);
     }
 
     try {
         const profesores = await odooExec(
             'gestion_entrada.profesor',
             'search_read',
-            [[['uid', 'ilike', uid]]],
+            [[['uid', '=', uidCorto]]],
             { fields: fieldsProfesor, limit: 2 }
         );
         if (profesores && profesores.length === 1) {
@@ -131,48 +128,7 @@ async function buscarPersonaPorUid(uid, fieldsAlumno, fieldsProfesor) {
             return { found: false, ambiguous: true, persona: null, modelo: null };
         }
     } catch (e) {
-        console.warn('Error buscando profesor exacto:', e.message);
-    }
-
-    const ES_UID_CORTO = uid.length < 14;
-    if (!ES_UID_CORTO) {
-        return { found: false, ambiguous: false, persona: null, modelo: null };
-    }
-
-    const patron = `${uid}%`;
-
-    try {
-        const alumnos = await odooExec(
-            'gestion_entrada.alumno',
-            'search_read',
-            [[['uid', 'ilike', patron]]],
-            { fields: fieldsAlumno, limit: 5 }
-        );
-        if (alumnos && alumnos.length === 1) {
-            return { found: true, ambiguous: false, persona: alumnos[0], modelo: 'alumno' };
-        }
-        if (alumnos && alumnos.length > 1) {
-            return { found: false, ambiguous: true, persona: null, modelo: null };
-        }
-    } catch (e) {
-        console.warn('Error buscando alumno por prefijo:', e.message);
-    }
-
-    try {
-        const profesores = await odooExec(
-            'gestion_entrada.profesor',
-            'search_read',
-            [[['uid', 'ilike', patron]]],
-            { fields: fieldsProfesor, limit: 5 }
-        );
-        if (profesores && profesores.length === 1) {
-            return { found: true, ambiguous: false, persona: profesores[0], modelo: 'profesor' };
-        }
-        if (profesores && profesores.length > 1) {
-            return { found: false, ambiguous: true, persona: null, modelo: null };
-        }
-    } catch (e) {
-        console.warn('Error buscando profesor por prefijo:', e.message);
+        console.warn('Error buscando profesor por uid:', e.message);
     }
 
     return { found: false, ambiguous: false, persona: null, modelo: null };
@@ -471,25 +427,34 @@ app.post('/api/register', async (req, res) => {
     if (!uid || !mensajeEstado) return sendError(res, 400, 'Faltan datos obligatorios (uid, mensajeEstado)');
 
     try {
+        //Normalizamos a UID corto desde el principio: todos los registros se
+        //guardan con la misma longitud (la que lee el USB), venga la lectura
+        //del movil o del USB.
+        const uidCorto = prefijoUid(uid);
         const values = {
-            uid,
+            uid: uidCorto,
             reg_type: mensajeEstado,
             dateTime: dateTime || new Date().toISOString().replace('T', ' ').substring(0, 19)
         };
 
-        const fieldsAlumno = ['id'];
-        const fieldsProfesor = ['id'];
+        const fieldsAlumno = ['id', 'uid'];
+        const fieldsProfesor = ['id', 'uid'];
         const r = await buscarPersonaPorUid(uid, fieldsAlumno, fieldsProfesor);
 
         if (r.found && r.modelo === 'alumno') {
             values.usr_type = 'alumno';
             values.alumno_id = r.persona.id;
+            //Si la persona esta vinculada, usamos el UID guardado en su ficha
+            //(ya normalizado a corto). Asi el registro queda consistente con
+            //el resto de registros de esa tarjeta.
+            if (r.persona.uid) values.uid = prefijoUid(r.persona.uid);
         } else if (r.found && r.modelo === 'profesor') {
             //Profesor escaneando su propia tarjeta: el profesor_id es el escaneado.
             //Aunque haya operador_username, no lo sobrescribimos: el registro pertenece
             //al profesor cuya tarjeta paso, no a quien la pasa (que suele ser el mismo).
             values.usr_type = 'profesor';
             values.profesor_id = r.persona.id;
+            if (r.persona.uid) values.uid = prefijoUid(r.persona.uid);
         } else {
             values.usr_type = usr_type_recibido || 'alumno';
         }
@@ -543,7 +508,11 @@ app.get('/api/registros/:uid', async (req, res) => {
     }
 
     try {
-        const domain = [['uid', 'ilike', uid]];
+        //Normalizamos a UID corto y buscamos por igualdad exacta. Como todos los
+        //registros se guardan ya en formato corto, esto recoge tanto los hechos
+        //con USB como con movil, sin riesgo de capturar otra tarjeta distinta.
+        const uidCorto = prefijoUid(uid);
+        const domain = [['uid', '=', uidCorto]];
         if (fecha) {
             domain.push(['dateTime', '>=', `${fecha} 00:00:00`]);
             domain.push(['dateTime', '<=', `${fecha} 23:59:59`]);
@@ -1033,7 +1002,10 @@ app.post('/api/vincular-nfc', async (req, res) => {
     }
 
     try {
-        const uidLimpio = String(uid).trim().toUpperCase();
+        //Normalizamos a UID corto: el lector USB solo lee el prefijo, asi que
+        //guardamos siempre esa longitud comun. Da igual si la lectura vino del
+        //movil (UID largo) o del USB (UID corto), en la BD queda el corto.
+        const uidLimpio = prefijoUid(uid);
         const idNum = parseInt(id, 10);
 
         const existeAlumno = await odooExec(
