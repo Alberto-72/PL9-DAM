@@ -5,20 +5,30 @@
 import { API_ENDPOINTS } from '../config/api';
 import { apiClient } from './apiClient';
 
-//Login contra el backend. Devuelve el objeto usuario si tiene exito, o null si falla.
+//Login contra el backend.
+//Devuelve un objeto con el resultado:
+//  { ok: true, usuario }                          -> login correcto
+//  { ok: false, motivo: 'credenciales' }          -> usuario o contraseña incorrectos
+//  { ok: false, motivo: 'red', mensaje }          -> no se pudo contactar con el servidor
+//  { ok: false, motivo: 'error', mensaje }        -> otro error
+//
+//Antes esta funcion devolvia null para cualquier fallo, lo que hacia imposible
+//distinguir un error de red de una contraseña incorrecta. Ahora el motivo es
+//explicito para que la pantalla de login muestre un mensaje correcto.
 export const loginToOdoo = async (username, password) => {
   try {
     const data = await apiClient.post(API_ENDPOINTS.LOGIN, { username, password });
 
-    if (data.success) {
-      return data.usuario;
-    } else {
-      console.warn("Fallo de login:", data.message);
-      return null;
+    if (data && data.success) {
+      return { ok: true, usuario: data.usuario };
     }
+
+    return { ok: false, motivo: 'credenciales', mensaje: data?.message || 'Usuario o contraseña no válidos' };
   } catch (error) {
-    console.error("Error conectando con el servidor Node:", error.message);
-    return null;
+    if (error.isNetworkError || error.isTimeout) {
+      return { ok: false, motivo: 'red', mensaje: error.message };
+    }
+    return { ok: false, motivo: 'error', mensaje: error.message || 'Error desconocido' };
   }
 };
 

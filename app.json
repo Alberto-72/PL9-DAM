@@ -6,7 +6,6 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "newArchEnabled": false,
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -14,7 +13,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.tunombre.controlacceso",
+      "bundleIdentifier": "com.iessjr.controlacceso",
       "infoPlist": {
         "NFCReaderUsageDescription": "Necesitamos usar NFC para leer el carnet del alumno y verificar su acceso."
       }
@@ -24,11 +23,11 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true,
-      "package": "com.tunombre.controlacceso",
+      "package": "com.iessjr.controlacceso",
       "permissions": [
         "android.permission.NFC"
-      ]
+      ],
+      "usesCleartextTraffic": true
     },
     "web": {
       "favicon": "./assets/favicon.png"

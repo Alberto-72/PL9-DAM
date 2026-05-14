@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
-import { 
-  View, 
-  Text, 
-  TextInput, 
-  TouchableOpacity, 
-  StyleSheet, 
-  ActivityIndicator, 
-  KeyboardAvoidingView, 
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  ActivityIndicator,
+  KeyboardAvoidingView,
   Platform,
   TouchableWithoutFeedback,
   Keyboard
@@ -16,7 +16,7 @@ import { loginToOdoo } from '../../services/LogInService';
 
 export default function LoginScreen({ route }) {
   const { onLogin } = route.params;
-  
+
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -32,25 +32,32 @@ export default function LoginScreen({ route }) {
     setError('');
 
     try {
-      const userData = await loginToOdoo(username, password);
-      
-      if (userData) {
-        console.log("DEBUG LOGIN - Datos recibidos:", userData);
-        
-        if (!userData.username) {
-          console.error("ERROR CRÍTICO: El usuario no tiene username");
-          setError('Error de sistema: Usuario sin nombre de usuario');
+      const resultado = await loginToOdoo(username, password);
+
+      if (resultado.ok) {
+        const userData = resultado.usuario;
+
+        if (!userData || !userData.username) {
+          console.error('ERROR: El usuario no tiene username');
+          setError('Error de sistema: usuario sin nombre de usuario');
           return;
         }
 
-        // Pasamos el token, el rol y el USERNAME (ya no el ID)
         onLogin(userData.token || 'fake-token', userData.role || 'directiva', userData.username);
-      } else {
+        return;
+      }
+
+      //Login fallido: mostramos un mensaje distinto segun el motivo real
+      if (resultado.motivo === 'red') {
+        setError('No se puede conectar con el servidor. Comprueba la red.');
+      } else if (resultado.motivo === 'credenciales') {
         setError('Usuario o contraseña no válidos');
+      } else {
+        setError(`Error: ${resultado.mensaje}`);
       }
     } catch (err) {
-      setError('Error al conectar con el servidor');
-      console.error(err);
+      console.error('Error inesperado en handleLogin:', err);
+      setError(`Error inesperado: ${err.message}`);
     } finally {
       setLoading(false);
     }
@@ -60,13 +67,13 @@ export default function LoginScreen({ route }) {
   const wrapperProps = Platform.OS === 'web' ? {} : { onPress: Keyboard.dismiss };
 
   return (
-    <KeyboardAvoidingView 
-      style={styles.container} 
+    <KeyboardAvoidingView
+      style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <Wrapper {...wrapperProps}>
         <View style={styles.innerContainer}>
-          
+
           <View style={styles.card}>
             {/* Cabecera */}
             <View style={styles.header}>
@@ -79,11 +86,11 @@ export default function LoginScreen({ route }) {
 
             {/* Formulario */}
             <View style={styles.form}>
-              
+
               {/* Input Usuario */}
               <View style={styles.inputWrapper}>
                 <Feather name="user" size={18} color="#CBD5E1" style={styles.inputIcon} />
-                <TextInput 
+                <TextInput
                   style={styles.input}
                   placeholder="Usuario"
                   placeholderTextColor="#94A3B8"
@@ -98,7 +105,7 @@ export default function LoginScreen({ route }) {
               {/* Input Contraseña */}
               <View style={styles.inputWrapper}>
                 <Feather name="lock" size={18} color="#CBD5E1" style={styles.inputIcon} />
-                <TextInput 
+                <TextInput
                   style={styles.input}
                   placeholder="Contraseña"
                   placeholderTextColor="#94A3B8"
@@ -118,7 +125,7 @@ export default function LoginScreen({ route }) {
               ) : null}
 
               {/* Botón de Entrar */}
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={[styles.button, loading && styles.buttonDisabled]}
                 onPress={handleLogin}
                 disabled={loading}
@@ -221,6 +228,7 @@ const styles = StyleSheet.create({
   errorContainer: {
     backgroundColor: '#FEF2F2',
     paddingVertical: 8,
+    paddingHorizontal: 12,
     borderRadius: 8,
     marginBottom: 16,
   },

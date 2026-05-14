@@ -16,15 +16,34 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+//Log de cada peticion entrante: metodo, ruta y hora. Util para confirmar que las
+//peticiones del movil estan llegando al servidor.
+app.use((req, res, next) => {
+    const hora = new Date().toISOString().substring(11, 19);
+    console.log(`[${hora}] ${req.method} ${req.url}`);
+    next();
+});
+
 const upload = multer({ storage: multer.memoryStorage() });
 
+
+// const odooConfig = {
+//     url: 'http://10.102.6.200',
+//     port: 8069,
+//     db: 'ControlAcceso',
+//     username: 'albertoroaf@gmail.com',
+//     password: 'AlberPabKil123'
+// };
+
+
 const odooConfig = {
-    url: 'http://10.102.6.200',
-    port: 8069,
-    db: 'ControlAcceso',
-    username: 'albertoroaf@gmail.com',
-    password: 'AlberPabKil123'
+    url: 'http://localhost',
+    port: 8070,
+    db: 'admin',
+    username: 'admin',
+    password: 'admin'
 };
+
 
 const CURSOS = [
     ['1ESO', '1 Educacion Secundaria Obligatoria'],
