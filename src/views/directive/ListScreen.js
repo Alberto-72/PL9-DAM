@@ -32,6 +32,10 @@ export default function ListScreen({ route, navigation }) {
   const [cursoFiltro, setCursoFiltro] = useState(FILTRO_TODOS);
   const [mostrarFiltroCursos, setMostrarFiltroCursos] = useState(false);
 
+  //Resultado de la ultima importacion CSV: se muestra en un modal con dos
+  //secciones (creados y fallidos). null mientras no hay resultado que mostrar.
+  const [resultadoImport, setResultadoImport] = useState(null);
+
   //Helper para mostrar alertas: en web usa window.alert/confirm, en movil usa Alert.alert
   const mostrarAlerta = (titulo, mensaje) => {
     if (Platform.OS === 'web') window.alert(`${titulo}\n\n${mensaje}`);
@@ -127,7 +131,10 @@ export default function ListScreen({ route, navigation }) {
       const resData = await apiClient.post(API_ENDPOINTS.IMPORTAR_CSV(tipo), formData);
 
       if (resData.success) {
-        mostrarAlerta('Resultado', `Importación terminada.\n${resData.message}`);
+        setResultadoImport({
+          creados: resData.creadosLista || [],
+          fallidos: resData.fallidosLista || [],
+        });
         await cargarDatos();
       } else {
         mostrarAlerta('Error', resData.message || 'No se pudo importar el archivo.');
@@ -390,6 +397,88 @@ export default function ListScreen({ route, navigation }) {
           </View>
         </TouchableOpacity>
       </Modal>
+
+      {/*Modal de resultado de la importacion CSV: dos secciones, creados y fallidos*/}
+      <Modal
+        animationType="fade"
+        transparent
+        visible={resultadoImport !== null}
+        onRequestClose={() => setResultadoImport(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalResultado}>
+            <Text style={styles.modalFiltroTitulo}>Resultado de la importación</Text>
+
+            <View style={styles.resumenFila}>
+              <View style={[styles.resumenChip, { backgroundColor: '#ECFDF5' }]}>
+                <Feather name="check-circle" size={14} color="#059669" style={{ marginRight: 6 }} />
+                <Text style={[styles.resumenChipTexto, { color: '#059669' }]}>
+                  {resultadoImport ? resultadoImport.creados.length : 0} creados
+                </Text>
+              </View>
+              <View style={[styles.resumenChip, { backgroundColor: '#FEF2F2' }]}>
+                <Feather name="alert-circle" size={14} color="#EF4444" style={{ marginRight: 6 }} />
+                <Text style={[styles.resumenChipTexto, { color: '#EF4444' }]}>
+                  {resultadoImport ? resultadoImport.fallidos.length : 0} fallidos
+                </Text>
+              </View>
+            </View>
+
+            <ScrollView style={{ maxHeight: 380 }}>
+              {resultadoImport && resultadoImport.creados.length > 0 && (
+                <View style={styles.seccionResultado}>
+                  <Text style={styles.seccionTitulo}>Creados correctamente</Text>
+                  {resultadoImport.creados.map((p, idx) => (
+                    <View key={`ok-${idx}`} style={styles.personaFila}>
+                      <Feather name="user-check" size={16} color="#059669" style={{ marginRight: 10 }} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.personaNombre} numberOfLines={1}>
+                          {p.nombre} {p.apellidos}
+                        </Text>
+                        {!!p.extra && (
+                          <Text style={styles.personaExtra} numberOfLines={2}>{p.extra}</Text>
+                        )}
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              {resultadoImport && resultadoImport.fallidos.length > 0 && (
+                <View style={styles.seccionResultado}>
+                  <Text style={styles.seccionTitulo}>No se pudieron importar</Text>
+                  {resultadoImport.fallidos.map((p, idx) => (
+                    <View key={`fail-${idx}`} style={styles.personaFila}>
+                      <Feather name="x-circle" size={16} color="#EF4444" style={{ marginRight: 10 }} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.personaNombre} numberOfLines={1}>
+                          {p.nombre || 'Sin nombre'} {p.apellidos}
+                        </Text>
+                        <Text style={styles.personaMotivo} numberOfLines={3}>{p.motivo}</Text>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              {resultadoImport &&
+                resultadoImport.creados.length === 0 &&
+                resultadoImport.fallidos.length === 0 && (
+                  <Text style={styles.resultadoVacio}>
+                    El archivo no contenía ninguna fila.
+                  </Text>
+                )}
+            </ScrollView>
+
+            <TouchableOpacity
+              style={styles.botonCerrarResultado}
+              onPress={() => setResultadoImport(null)}
+            >
+              <Text style={styles.botonCerrarResultadoTexto}>Cerrar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -607,5 +696,78 @@ const styles = StyleSheet.create({
   opcionCursoTextoActivo: {
     color: '#2563EB',
     fontWeight: '700',
+  },
+  modalResultado: {
+    width: '100%',
+    maxWidth: 440,
+    backgroundColor: 'white',
+    borderRadius: 20,
+    padding: 20,
+  },
+  resumenFila: {
+    flexDirection: 'row',
+    marginBottom: 14,
+  },
+  resumenChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    marginRight: 8,
+  },
+  resumenChipTexto: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  seccionResultado: {
+    marginBottom: 16,
+  },
+  seccionTitulo: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#475569',
+    textTransform: 'uppercase',
+    marginBottom: 8,
+  },
+  personaFila: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  personaNombre: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1E293B',
+  },
+  personaExtra: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  personaMotivo: {
+    fontSize: 12,
+    color: '#EF4444',
+    marginTop: 2,
+  },
+  resultadoVacio: {
+    fontSize: 14,
+    color: '#94A3B8',
+    textAlign: 'center',
+    paddingVertical: 20,
+  },
+  botonCerrarResultado: {
+    backgroundColor: '#2563EB',
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 14,
+  },
+  botonCerrarResultadoTexto: {
+    color: 'white',
+    fontWeight: 'bold',
+    fontSize: 15,
   },
 });

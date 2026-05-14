@@ -19,7 +19,7 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 const upload = multer({ storage: multer.memoryStorage() });
 
 const odooConfig = {
-    url: 'http://10.102.7.16',
+    url: 'http://10.102.6.200',
     port: 8069,
     db: 'ControlAcceso',
     username: 'albertoroaf@gmail.com',
@@ -53,6 +53,54 @@ function getCursoCompleto(key) {
     if (!key || key === false) return null;
     const found = CURSOS.find(([short]) => short === key);
     return found ? found[1] : key;
+}
+
+//Normaliza un texto para comparar cursos: quita tildes, simbolos como "º",
+//espacios sobrantes y pasa a minusculas. Asi "3º Educación..." y
+//"3 Educacion..." se consideran iguales.
+function normalizarTexto(texto) {
+    if (!texto) return '';
+    return String(texto)
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[º°]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .toLowerCase();
+}
+
+//Convierte el nombre largo de un curso (como viene en el CSV) al codigo corto
+//que guarda Odoo. Devuelve null si no se reconoce el curso.
+function getCodigoCurso(nombreLargo) {
+    if (!nombreLargo) return null;
+    const objetivo = normalizarTexto(nombreLargo);
+    const found = CURSOS.find(([, largo]) => normalizarTexto(largo) === objetivo);
+    return found ? found[0] : null;
+}
+
+//Convierte una fecha en formato dd/mm/yyyy (o dd-mm-yyyy) al formato yyyy-mm-dd
+//que espera Odoo. Si ya viene en formato yyyy-mm-dd la deja igual. Devuelve null
+//si no consigue interpretarla.
+function convertirFecha(valor) {
+    if (!valor) return null;
+    const texto = String(valor).trim();
+
+    if (/^\d{4}-\d{2}-\d{2}$/.test(texto)) return texto;
+
+    const partes = texto.split(/[\/\-]/);
+    if (partes.length !== 3) return null;
+
+    let [dia, mes, anio] = partes;
+    if (anio.length !== 4) return null;
+
+    dia = dia.padStart(2, '0');
+    mes = mes.padStart(2, '0');
+
+    const d = parseInt(dia, 10);
+    const m = parseInt(mes, 10);
+    if (d < 1 || d > 31 || m < 1 || m > 12) return null;
+
+    return `${anio}-${mes}-${dia}`;
 }
 
 function odooExec(model, method, args, kwargs = {}) {
@@ -614,10 +662,11 @@ app.post('/api/importar-csv/:tipo', upload.single('archivo'), async (req, res) =
 
     const model = tipo === 'alumnos' ? 'gestion_entrada.alumno' : 'gestion_entrada.profesor';
 
+    //Los CSV del centro usan punto y coma como separador y vienen con comillas.
     const filas = await new Promise((resolve, reject) => {
         const resultados = [];
         Readable.from(req.file.buffer)
-            .pipe(csvParser())
+            .pipe(csvParser({ separator: ';' }))
             .on('data', (data) => resultados.push(data))
             .on('end', () => resolve(resultados))
             .on('error', reject);
@@ -628,41 +677,126 @@ app.post('/api/importar-csv/:tipo', upload.single('archivo'), async (req, res) =
 
     if (filas === null) return sendError(res, 400, 'CSV mal formado');
 
-    const camposValidos = tipo === 'alumnos'
-        ? ['name', 'surname', 'school_year', 'email', 'can_bus', 'photo', 'birth_date', 'uid']
-        : ['name', 'surname', 'email', 'username', 'birth_date', 'photo', 'user_pass', 'uid', 'is_management'];
+    //Lee un campo de la fila probando varios nombres de columna posibles, ya que
+    //el CSV puede traer ligeras variaciones en los encabezados. Devuelve '' si
+    //ninguno existe.
+    const leerCampo = (fila, ...nombres) => {
+        for (const nombre of nombres) {
+            if (fila[nombre] !== undefined && String(fila[nombre]).trim() !== '') {
+                return String(fila[nombre]).trim();
+            }
+        }
+        return '';
+    };
 
     let creados = 0, errores = 0;
     const detallesErrores = [];
+    const creadosLista = [];
+    const fallidosLista = [];
 
     for (let i = 0; i < filas.length; i++) {
         const fila = filas[i];
+        const numeroFila = i + 2;
+        let values = {};
+        //Datos para las listas que se devuelven al frontend (modal de resultado)
+        let infoPersona = { nombre: '', apellidos: '', extra: '' };
 
-        const values = {};
-        for (const k of camposValidos) {
-            if (fila[k] !== undefined && fila[k] !== '') {
-                if (k === 'can_bus' || k === 'is_management') {
-                    values[k] = ['true', '1', 'si', 'sí', 'yes'].includes(String(fila[k]).toLowerCase().trim());
-                } else if (k === 'user_pass') {
-                    values[k] = await bcrypt.hash(fila[k], 10);
-                } else {
-                    values[k] = fila[k];
-                }
+        if (tipo === 'profesores') {
+            const nombre = leerCampo(fila, 'Nombre');
+            const apellido1 = leerCampo(fila, 'Primer Apellido');
+            const apellido2 = leerCampo(fila, 'Segundo Apellido');
+            const nif = leerCampo(fila, 'N.I.F./N.I.E.', 'NIF', 'Nif - Nie');
+            const alias = leerCampo(fila, 'Alias');
+            const email = leerCampo(fila, 'email', 'Email');
+            const fechaCruda = leerCampo(fila, 'Fecha de Nacimiento', 'Fecha de nacimiento');
+
+            const fecha = convertirFecha(fechaCruda);
+            const passwordHasheada = await bcrypt.hash('IESSJR', 10);
+
+            const apellidos = `${apellido1} ${apellido2}`.trim();
+            infoPersona = { nombre, apellidos, extra: alias };
+
+            values = {
+                nif,
+                name: nombre,
+                surname: apellidos,
+                username: alias,
+                email,
+                user_pass: passwordHasheada,
+                is_management: false,
+            };
+            if (fecha) values.birth_date = fecha;
+
+            if (!nombre || !apellido1 || !nif || !alias || !email) {
+                errores++;
+                const motivo = 'faltan datos obligatorios (nombre, apellido, nif, alias o email)';
+                detallesErrores.push(`Fila ${numeroFila}: ${motivo}`);
+                fallidosLista.push({ ...infoPersona, motivo });
+                continue;
             }
-        }
+            if (!fecha) {
+                errores++;
+                const motivo = `fecha de nacimiento invalida o ausente ("${fechaCruda}")`;
+                detallesErrores.push(`Fila ${numeroFila}: ${motivo}`);
+                fallidosLista.push({ ...infoPersona, motivo });
+                continue;
+            }
+        } else {
+            const nombre = leerCampo(fila, 'Nombre');
+            const apellido1 = leerCampo(fila, 'Primer apellido', 'Primer Apellido');
+            const apellido2 = leerCampo(fila, 'Segundo apellido', 'Segundo Apellido');
+            const nif = leerCampo(fila, 'Nif - Nie', 'N.I.F./N.I.E.', 'NIF');
+            const email = leerCampo(fila, 'email', 'Email');
+            const fechaCruda = leerCampo(fila, 'Fecha de nacimiento', 'Fecha de Nacimiento');
+            const cursoCrudo = leerCampo(fila, 'Curso');
 
-        if (!values.name || !values.surname) {
-            errores++;
-            detallesErrores.push(`Fila ${i + 2}: name y surname obligatorios`);
-            continue;
+            const fecha = convertirFecha(fechaCruda);
+            const codigoCurso = getCodigoCurso(cursoCrudo);
+
+            const apellidos = `${apellido1} ${apellido2}`.trim();
+            infoPersona = { nombre, apellidos, extra: getCursoCompleto(codigoCurso) || cursoCrudo };
+
+            values = {
+                nif,
+                name: nombre,
+                surname: apellidos,
+                email,
+                can_bus: false,
+            };
+            if (fecha) values.birth_date = fecha;
+            if (codigoCurso) values.school_year = codigoCurso;
+
+            if (!nombre || !apellido1 || !nif || !email) {
+                errores++;
+                const motivo = 'faltan datos obligatorios (nombre, apellido, nif o email)';
+                detallesErrores.push(`Fila ${numeroFila}: ${motivo}`);
+                fallidosLista.push({ ...infoPersona, motivo });
+                continue;
+            }
+            if (!fecha) {
+                errores++;
+                const motivo = `fecha de nacimiento invalida o ausente ("${fechaCruda}")`;
+                detallesErrores.push(`Fila ${numeroFila}: ${motivo}`);
+                fallidosLista.push({ ...infoPersona, motivo });
+                continue;
+            }
+            if (!codigoCurso) {
+                errores++;
+                const motivo = `curso no reconocido ("${cursoCrudo}")`;
+                detallesErrores.push(`Fila ${numeroFila}: ${motivo}`);
+                fallidosLista.push({ ...infoPersona, motivo });
+                continue;
+            }
         }
 
         try {
             await odooExec(model, 'create', [values]);
             creados++;
+            creadosLista.push(infoPersona);
         } catch (err) {
             errores++;
-            detallesErrores.push(`Fila ${i + 2}: ${err.message}`);
+            detallesErrores.push(`Fila ${numeroFila}: ${err.message}`);
+            fallidosLista.push({ ...infoPersona, motivo: err.message });
         }
     }
 
@@ -671,7 +805,9 @@ app.post('/api/importar-csv/:tipo', upload.single('archivo'), async (req, res) =
         message: `Creados: ${creados}, Errores: ${errores}`,
         creados,
         errores,
-        detalles: detallesErrores.slice(0, 20)
+        detalles: detallesErrores.slice(0, 20),
+        creadosLista,
+        fallidosLista,
     });
 });
 
