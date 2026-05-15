@@ -1,14 +1,14 @@
-//Servidor Express que conecta la app movil y la app web con Odoo
-const express = require('express');
+// Importación de módulos necesarios
+const express = require('express'); // Para crear API REST
 const cors = require('cors');
-const multer = require('multer');
-const csvParser = require('csv-parser');
+const multer = require('multer'); // Subida de archivos
+const csvParser = require('csv-parser'); // Manejo de CSV
 const { Readable } = require('stream');
-const Odoo = require('odoo-xmlrpc');
-const bcrypt = require('bcrypt');
+const Odoo = require('odoo-xmlrpc'); // Para conectarnos con Odoo
+const bcrypt = require('bcrypt'); // Para el hasheo de las contraseñas
 
 const app = express();
-app.use(cors({
+app.use(cors({ // Configuracion del cors para que acepte peticiones de cualquier origen y los metodos estandar
     origin: '*',
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization']
@@ -16,35 +16,25 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-//Log de cada peticion entrante: metodo, ruta y hora. Util para confirmar que las
-//peticiones del movil estan llegando al servidor.
+// Configuracion para entender json y configurar el limite de mb para el tema de las fotos
 app.use((req, res, next) => {
     const hora = new Date().toISOString().substring(11, 19);
     console.log(`[${hora}] ${req.method} ${req.url}`);
     next();
 });
 
+// Guarda, en este caso csv en la memoria en la RAM para mejor velocidad
 const upload = multer({ storage: multer.memoryStorage() });
 
-
-// const odooConfig = {
-//     url: 'http://10.102.6.200',
-//     port: 8069,
-//     db: 'ControlAcceso',
-//     username: 'albertoroaf@gmail.com',
-//     password: 'AlberPabKil123'
-// };
-
-
 const odooConfig = {
-    url: 'http://localhost',
-    port: 8070,
-    db: 'admin',
-    username: 'admin',
-    password: 'admin'
+    url: 'http://10.102.6.200',
+    port: 8069,
+    db: 'ControlAcceso',
+    username: 'albertoroaf@gmail.com',
+    password: 'AlberPabKil123'
 };
 
-
+// Diccionario para que sea mas legible los cursos en cuanto a lo que esta guardado en odoo
 const CURSOS = [
     ['1ESO', '1 Educacion Secundaria Obligatoria'],
     ['2ESO', '2 Educacion Secundaria Obligatoria'],
@@ -68,40 +58,32 @@ const CURSOS = [
     ['2CFGS_GFMN', '2 CFGS Gestion Forestal y del Medio Natural']
 ];
 
-function getCursoCompleto(key) {
+function getCursoCompleto(key) { // Funcion que coge la string corta y devuelve la grande
     if (!key || key === false) return null;
     const found = CURSOS.find(([short]) => short === key);
     return found ? found[1] : key;
 }
 
-//Normaliza un texto para comparar cursos: quita tildes, simbolos como "º",
-//espacios sobrantes y pasa a minusculas. Asi "3º Educación..." y
-//"3 Educacion..." se consideran iguales.
-function normalizarTexto(texto) {
+function normalizarTexto(texto) { // Normalizacion de texto para la importación con csv
     if (!texto) return '';
     return String(texto)
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .replace(/[º°]/g, '')
-        .replace(/\s+/g, ' ')
-        .trim()
-        .toLowerCase();
+        .normalize('NFD') // Separa en dos caracteres los que tengan til de es decir á -> a + ´
+        .replace(/[\u0300-\u036f]/g, '') // Elimina acentos y este tipo de puntuaciones
+        .replace(/[º°]/g, '') // Elimina caracteres referentes a los grados
+        .replace(/\s+/g, ' ') // Elimina espacios dobles y los convierte en simples
+        .trim() // Elimina espacios en blanco al principio y al final
+        .toLowerCase(); // Lo pone todo en minúscula
 }
 
-//Convierte el nombre largo de un curso (como viene en el CSV) al codigo corto
-//que guarda Odoo. Devuelve null si no se reconoce el curso.
-function getCodigoCurso(nombreLargo) {
+function getCodigoCurso(nombreLargo) { // Coge el nombre que nos da el csv del pincel ekade y lo coteja con nuestro diccionario para tener el codigo que acepta odoo
     if (!nombreLargo) return null;
     const objetivo = normalizarTexto(nombreLargo);
     const found = CURSOS.find(([, largo]) => normalizarTexto(largo) === objetivo);
     return found ? found[0] : null;
 }
 
-//Convierte una fecha en formato dd/mm/yyyy (o dd-mm-yyyy) al formato yyyy-mm-dd
-//que espera Odoo. Si ya viene en formato yyyy-mm-dd la deja igual. Devuelve null
-//si no consigue interpretarla.
-function convertirFecha(valor) {
-    if (!valor) return null;
+function convertirFecha(valor) { // Covierte las fechas al formato que espera odoo yyyy-mm-dd
+    if (!valor) return null;     // Si está ya en ese formato se deja igual
     const texto = String(valor).trim();
 
     if (/^\d{4}-\d{2}-\d{2}$/.test(texto)) return texto;
@@ -122,7 +104,7 @@ function convertirFecha(valor) {
     return `${anio}-${mes}-${dia}`;
 }
 
-function odooExec(model, method, args, kwargs = {}) {
+function odooExec(model, method, args, kwargs = {}) { // Funcion para ejecutar crud en odoo
     return new Promise((resolve, reject) => {
         const odoo = new Odoo(odooConfig);
         odoo.connect((errConn) => {
@@ -140,32 +122,29 @@ function odooExec(model, method, args, kwargs = {}) {
     });
 }
 
-function sendError(res, status, message, extra = {}) {
+function sendError(res, status, message, extra = {}) { // Funcion para enviar errores en cunato al http
     console.error(`[ERROR ${status}] ${message}`);
     return res.status(status).json({ success: false, message, ...extra });
 }
 
-//El lector USB lee un prefijo del UID que lee el movil. Para que ambos lectores
-//cuenten como la misma tarjeta, normalizamos cualquier UID a su prefijo corto
-//(longitud que lee el USB). Asi un UID largo de movil y su version corta de USB
-//producen el mismo valor comparable.
 const LONGITUD_UID_CORTO = 8;
 function prefijoUid(uid) {
+    /*
+    Funcion para normalizar el UID, ya que si se lee desde el lector del movil da 14 caracteres
+    y si se lee desde el lector de escritorio lee 8 caracteres, por lo que se normaliza para que
+    todos tengan 8
+    */
     if (!uid) return '';
     return String(uid).trim().toUpperCase().substring(0, LONGITUD_UID_CORTO);
 }
-
-async function buscarPersonaPorUid(uid, fieldsAlumno, fieldsProfesor) {
+ 
+async function buscarPersonaPorUid(uid, fieldsAlumno, fieldsProfesor) { // Funcion para buscar personas en base a lo escaneado
     if (!uid) return { found: false, ambiguous: false, persona: null, modelo: null };
 
-    //Todos los UIDs en la BD estan guardados en formato corto (ver prefijoUid).
-    //Normalizamos la lectura entrante igual y comparamos por igualdad exacta.
-    //Esto evita falsos positivos: un UID corto nunca puede coincidir por error
-    //con el prefijo de otra tarjeta distinta.
-    const uidCorto = prefijoUid(uid);
+    const uidCorto = prefijoUid(uid); // En el caso de que se lea el uid por el movil (14 caracteres)
 
     try {
-        const alumnos = await odooExec(
+        const alumnos = await odooExec( // Búsqueda del uid en la tabla de alumnos
             'gestion_entrada.alumno',
             'search_read',
             [[['uid', '=', uidCorto]]],
@@ -181,7 +160,7 @@ async function buscarPersonaPorUid(uid, fieldsAlumno, fieldsProfesor) {
         console.warn('Error buscando alumno por uid:', e.message);
     }
 
-    try {
+    try { // Si no lo encuentra, busca en la de profesorado realizando la misma consulta
         const profesores = await odooExec(
             'gestion_entrada.profesor',
             'search_read',
@@ -202,7 +181,7 @@ async function buscarPersonaPorUid(uid, fieldsAlumno, fieldsProfesor) {
 }
 
 let _lectornfcIdCache = null;
-async function getLectorNfcId() {
+async function getLectorNfcId() {// Si el id es leido por una maquina fisica estática (conserjeria) lo guarda como lectornfc
     if (_lectornfcIdCache !== null) return _lectornfcIdCache;
     try {
         const result = await odooExec(
@@ -223,22 +202,24 @@ async function getLectorNfcId() {
     }
 }
 
-app.get('/', (req, res) => {
+app.get('/', (req, res) => { // endpoint para comprobar si odoo está funcionando correctamente
     res.send('Servidor Odoo funcionando correctamente.');
 });
 
-app.post('/api/verificar-tarjeta', async (req, res) => {
+app.post('/api/verificar-tarjeta', async (req, res) => { // Api endpoint para veirificar el uid de la tarjeta
     const { tarjetaId } = req.body;
     if (!tarjetaId) return sendError(res, 400, 'Falta tarjetaId');
 
     console.log(`\nUID Recibido: ${tarjetaId} -> Consultando Odoo...`);
 
     try {
+        // Campos para consultar en odoo
         const fieldsAlumno = ['name', 'surname', 'photo', 'school_year', 'birth_date', 'can_bus'];
         const fieldsProfesor = ['name', 'surname', 'photo', 'birth_date'];
 
-        const r = await buscarPersonaPorUid(tarjetaId, fieldsAlumno, fieldsProfesor);
+        const r = await buscarPersonaPorUid(tarjetaId, fieldsAlumno, fieldsProfesor); // Se busca a la persona en base a id y campos aceptados para cada uno
 
+        // Si encuentra alumno, devuelve un json con los datos formateados
         if (r.found && r.modelo === 'alumno') {
             const a = r.persona;
             const nombreCompleto = `${a.name} ${a.surname || ''}`.trim();
@@ -255,6 +236,7 @@ app.post('/api/verificar-tarjeta', async (req, res) => {
             });
         }
 
+        // Si es profesor, pasa igual que si fuera alumno
         if (r.found && r.modelo === 'profesor') {
             const p = r.persona;
             const nombreCompleto = `${p.name} ${p.surname || ''}`.trim();
@@ -271,11 +253,12 @@ app.post('/api/verificar-tarjeta', async (req, res) => {
             });
         }
 
-        if (r.ambiguous) {
+        // Manejo de errores
+        if (r.ambiguous) { // En el caso de que se encontraran con el mismo uid varios usuarios (NO DEBERIA, pero esta controlado)
             console.log(`UID ${tarjetaId} matchea varios candidatos. Tarjeta ambigua.`);
             return res.json({ success: false, message: 'Tarjeta ambigua (multiples coincidencias)' });
         }
-
+        // En el caso de que no exista el uid escaneado
         console.log(`UID ${tarjetaId} no existe en la base de datos.`);
         return res.json({ success: false, message: 'Tarjeta no registrada' });
 
@@ -284,7 +267,8 @@ app.post('/api/verificar-tarjeta', async (req, res) => {
     }
 });
 
-app.get('/api/alumnos', async (req, res) => {
+//  ## ENDPOINTS PARA CRUD DE LOS ALUMNOS ##
+app.get('/api/alumnos', async (req, res) => { // Busca listado completo de alumnos
     console.log('\nSolicitando lista de alumnos...');
     try {
         const result = await odooExec(
@@ -300,13 +284,13 @@ app.get('/api/alumnos', async (req, res) => {
     }
 });
 
-app.post('/api/alumnos', async (req, res) => {
-    const { name, surname, nif, email, birth_date, school_year, can_bus, photo, uid } = req.body;
-    if (!name || !surname || !nif || !email || !birth_date) {
+app.post('/api/alumnos', async (req, res) => { // Creacion de un aluimno nuevo
+    const { name, surname, nif, email, birth_date, school_year, can_bus, photo, uid } = req.body; // Extrae campos
+    if (!name || !surname || !nif || !email || !birth_date) { // Datos obligatorios
         return sendError(res, 400, 'Faltan campos obligatorios (name, surname, nif, email, birth_date)');
     }
 
-    try {
+    try { // En el caso de que hayan datos que no existan los asigna
         const values = { name, surname, nif, email, birth_date };
         if (school_year !== undefined) values.school_year = school_year;
         if (can_bus !== undefined) values.can_bus = can_bus;
@@ -315,26 +299,26 @@ app.post('/api/alumnos', async (req, res) => {
 
         const newId = await odooExec('gestion_entrada.alumno', 'create', [values]);
         console.log(`Alumno creado con id: ${newId}`);
-        return res.json({ success: true, id: newId, message: 'Alumno creado' });
+        return res.json({ success: true, id: newId, message: 'Alumno creado' }); // Devuelve id y mensaje de confirmacion
     } catch (err) {
         return sendError(res, 500, err.message);
     }
 });
 
-app.put('/api/alumnos/:id', async (req, res) => {
+app.put('/api/alumnos/:id', async (req, res) => { // Actualizacion de alumnos
     const id = parseInt(req.params.id, 10);
     if (isNaN(id)) return sendError(res, 400, 'ID invalido');
 
     try {
         const allowed = ['name', 'surname', 'nif', 'email', 'birth_date', 'school_year', 'can_bus', 'photo', 'uid'];
         const values = {};
-        for (const k of allowed) {
+        for (const k of allowed) { // Comprobacion de los campos a ver si hay que hacer actualizaciones realmente
             if (req.body[k] !== undefined) values[k] = req.body[k];
         }
 
         if (Object.keys(values).length === 0) return sendError(res, 400, 'No hay campos para actualizar');
 
-        await odooExec('gestion_entrada.alumno', 'write', [[id], values]);
+        await odooExec('gestion_entrada.alumno', 'write', [[id], values]); // En el caso de que haya que actualizar, se realiza la operacion
         console.log(`Alumno ${id} actualizado`);
         return res.json({ success: true, message: 'Alumno actualizado' });
     } catch (err) {
@@ -342,7 +326,7 @@ app.put('/api/alumnos/:id', async (req, res) => {
     }
 });
 
-app.delete('/api/alumnos/:id', async (req, res) => {
+app.delete('/api/alumnos/:id', async (req, res) => { // Eliminacion de un alumno
     const id = parseInt(req.params.id, 10);
     if (isNaN(id)) return sendError(res, 400, 'ID invalido');
 
@@ -355,7 +339,9 @@ app.delete('/api/alumnos/:id', async (req, res) => {
     }
 });
 
-app.get('/api/profesores', async (req, res) => {
+
+//  ## ENDPOINTS PARA CRUD DE LOS PROFESORES ##
+app.get('/api/profesores', async (req, res) => { // Consulta para sacar el listado completo de profesores
     console.log('\nSolicitando lista de profesores...');
     try {
         const result = await odooExec(
@@ -371,19 +357,19 @@ app.get('/api/profesores', async (req, res) => {
     }
 });
 
-app.post('/api/profesores', async (req, res) => {
+app.post('/api/profesores', async (req, res) => { // Creacion de profesores
     const { name, surname, nif, email, birth_date, username, user_pass, photo, uid, is_management } = req.body;
-    if (!name || !surname || !nif || !email || !birth_date || !username || !user_pass) {
+    if (!name || !surname || !nif || !email || !birth_date || !username || !user_pass) { // Comprobacion de los require
         return sendError(res, 400, 'Faltan campos obligatorios (name, surname, nif, email, birth_date, username, user_pass)');
     }
 
     try {
-        const hashedPassword = await bcrypt.hash(user_pass, 10);
+        const hashedPassword = await bcrypt.hash(user_pass, 10); // Se coge la contraseña intruducida manualmente o por importacion y se hashea
 
-        const values = {
+        const values = { // Se formatean los valores y para las importaciones se pone por defecto que es falso
             name, surname, nif, email, birth_date, username, 
             user_pass: hashedPassword, 
-            is_management: is_management === undefined ? false : !!is_management,
+            is_management: is_management === undefined ? false : !!is_management, // Si no existe false, por otro lado fuerza a que el dato sea un booleano
         };
         if (photo !== undefined) values.photo = photo;
         if (uid !== undefined) values.uid = uid;
@@ -396,7 +382,7 @@ app.post('/api/profesores', async (req, res) => {
     }
 });
 
-app.put('/api/profesores/:id', async (req, res) => {
+app.put('/api/profesores/:id', async (req, res) => { // Actualizacion de los datos de un profesor 
     const id = parseInt(req.params.id, 10);
     if (isNaN(id)) return sendError(res, 400, 'ID invalido');
 
@@ -424,7 +410,7 @@ app.put('/api/profesores/:id', async (req, res) => {
     }
 });
 
-app.delete('/api/profesores/:id', async (req, res) => {
+app.delete('/api/profesores/:id', async (req, res) => { // Eliminacion de profesor
     const id = parseInt(req.params.id, 10);
     if (isNaN(id)) return sendError(res, 400, 'ID invalido');
 
@@ -437,14 +423,14 @@ app.delete('/api/profesores/:id', async (req, res) => {
     }
 });
 
-app.post('/api/login', async (req, res) => {
+app.post('/api/login', async (req, res) => { // endpoint para el logeo de los profesores
     const { username, password } = req.body;
-    if (!username || !password) return sendError(res, 400, 'Faltan credenciales');
+    if (!username || !password) return sendError(res, 400, 'Faltan credenciales'); // Si falta algun dato
 
     console.log(`\nIntento de login para usuario: ${username}`);
 
     try {
-        const result = await odooExec(
+        const result = await odooExec( // Se consultan los datos del profesor en base al username
             'gestion_entrada.profesor',
             'search_read',
             [[['username', '=', username]]],
@@ -454,7 +440,7 @@ app.post('/api/login', async (req, res) => {
         if (result && result.length > 0) {
             const userData = result[0];
             
-            const isMatch = await bcrypt.compare(password, userData.user_pass);
+            const isMatch = await bcrypt.compare(password, userData.user_pass); // Se comparan las contraseñas hasehadas
 
             if (isMatch) {
                 console.log(`LOGIN EXITOSO: ${userData.name} ${userData.surname}`);
@@ -479,46 +465,28 @@ app.post('/api/login', async (req, res) => {
     }
 });
 
-app.post('/api/register', async (req, res) => {
-    //Campos esperados:
-    //  - uid:                requerido (UID de la tarjeta NFC escaneada)
-    //  - mensajeEstado:      requerido (el reg_type)
-    //  - dateTime:           opcional (default: ahora)
-    //  - origen_lector:      opcional ('usb' o 'movil')
-    //  - operador_username:  opcional, username del profesor que opera la app movil
-    //                        (solo aplica si origen_lector === 'movil' y la persona
-    //                        escaneada no es ella misma un profesor)
-    //  - usr_type:           opcional (tentativo, el backend tiene palabra final)
-    const { uid, mensajeEstado, dateTime, origen_lector, operador_username } = req.body;
+app.post('/api/register', async (req, res) => { // Registro de eventos
+    const { uid, mensajeEstado, dateTime, origen_lector, operador_username } = req.body; // Extraccion de los datos necesarios
     const usr_type_recibido = req.body.usr_type;
     if (!uid || !mensajeEstado) return sendError(res, 400, 'Faltan datos obligatorios (uid, mensajeEstado)');
 
     try {
-        //Normalizamos a UID corto desde el principio: todos los registros se
-        //guardan con la misma longitud (la que lee el USB), venga la lectura
-        //del movil o del USB.
         const uidCorto = prefijoUid(uid);
         const values = {
             uid: uidCorto,
             reg_type: mensajeEstado,
-            dateTime: dateTime || new Date().toISOString().replace('T', ' ').substring(0, 19)
+            dateTime: dateTime || new Date().toISOString().replace('T', ' ').substring(0, 19) // Si no hay hora el servidor pone la hora actual
         };
 
         const fieldsAlumno = ['id', 'uid'];
         const fieldsProfesor = ['id', 'uid'];
-        const r = await buscarPersonaPorUid(uid, fieldsAlumno, fieldsProfesor);
+        const r = await buscarPersonaPorUid(uid, fieldsAlumno, fieldsProfesor); // Busca a la persoan
 
-        if (r.found && r.modelo === 'alumno') {
+        if (r.found && r.modelo === 'alumno') { // Si es alumno
             values.usr_type = 'alumno';
             values.alumno_id = r.persona.id;
-            //Si la persona esta vinculada, usamos el UID guardado en su ficha
-            //(ya normalizado a corto). Asi el registro queda consistente con
-            //el resto de registros de esa tarjeta.
-            if (r.persona.uid) values.uid = prefijoUid(r.persona.uid);
-        } else if (r.found && r.modelo === 'profesor') {
-            //Profesor escaneando su propia tarjeta: el profesor_id es el escaneado.
-            //Aunque haya operador_username, no lo sobrescribimos: el registro pertenece
-            //al profesor cuya tarjeta paso, no a quien la pasa (que suele ser el mismo).
+            if (r.persona.uid) values.uid = prefijoUid(r.persona.uid); // Si tiene el uid largo lo normaliza
+        } else if (r.found && r.modelo === 'profesor') { // Misma logica si es profesor
             values.usr_type = 'profesor';
             values.profesor_id = r.persona.id;
             if (r.persona.uid) values.uid = prefijoUid(r.persona.uid);
@@ -526,11 +494,7 @@ app.post('/api/register', async (req, res) => {
             values.usr_type = usr_type_recibido || 'alumno';
         }
 
-        //REGLA: rellenar profesor_id segun origen.
-        //  - Si origen es USB -> siempre lectornfc (lector anonimo, no sabemos quien opera)
-        //  - Si origen es movil Y se ha escaneado un alumno -> el operador_username del logueado
-        //  - Si origen es movil Y se ha escaneado un profesor -> ya esta puesto arriba, no tocar
-        if (origen_lector === 'usb') {
+        if (origen_lector === 'usb') { // En el caso de que se haga desde conserjeria
             const lectorId = await getLectorNfcId();
             if (lectorId) {
                 values.profesor_id = lectorId;
@@ -538,8 +502,7 @@ app.post('/api/register', async (req, res) => {
             } else {
                 console.warn("Usuario 'lectornfc' no existe en Odoo. profesor_id queda sin asignar.");
             }
-        } else if (origen_lector === 'movil' && values.usr_type === 'alumno' && operador_username) {
-            //Profesor X escanea tarjeta de alumno desde su movil: profesor_id = X
+        } else if (origen_lector === 'movil' && values.usr_type === 'alumno' && operador_username) { // Se busca el username del profesor que hizo el registro
             try {
                 const operadores = await odooExec(
                     'gestion_entrada.profesor',
@@ -558,14 +521,14 @@ app.post('/api/register', async (req, res) => {
             }
         }
 
-        const newId = await odooExec('gestion_entrada.registro', 'create', [values]);
+        const newId = await odooExec('gestion_entrada.registro', 'create', [values]); // Al tener todos lods datos se crea el registro
         return res.json({ success: true, id: newId, message: 'Registro creado' });
     } catch (err) {
         return sendError(res, 500, err.message);
     }
 });
 
-app.get('/api/registros/:uid', async (req, res) => {
+app.get('/api/registros/:uid', async (req, res) => { // Busca los ultimos registros de una persona en base a su id normalizado
     const uid = req.params.uid;
     if (!uid) return sendError(res, 400, 'Falta uid');
 
@@ -575,9 +538,6 @@ app.get('/api/registros/:uid', async (req, res) => {
     }
 
     try {
-        //Normalizamos a UID corto y buscamos por igualdad exacta. Como todos los
-        //registros se guardan ya en formato corto, esto recoge tanto los hechos
-        //con USB como con movil, sin riesgo de capturar otra tarjeta distinta.
         const uidCorto = prefijoUid(uid);
         const domain = [['uid', '=', uidCorto]];
         if (fecha) {
@@ -585,7 +545,7 @@ app.get('/api/registros/:uid', async (req, res) => {
             domain.push(['dateTime', '<=', `${fecha} 23:59:59`]);
         }
 
-        const result = await odooExec(
+        const result = await odooExec( // saca todos los registros en base a la fecha y hora para saber si el siguiente registro va a ser entrada o salida
             'gestion_entrada.registro',
             'search_read',
             [domain],
@@ -597,7 +557,7 @@ app.get('/api/registros/:uid', async (req, res) => {
     }
 });
 
-app.post('/api/change-password', async (req, res) => {
+app.post('/api/change-password', async (req, res) => { // Endpoint para el cambio de 
     const { username, currentPassword, newPassword } = req.body;
     if (!username || !currentPassword || !newPassword) {
         return sendError(res, 400, 'Username, currentPassword y newPassword son obligatorios');
@@ -607,7 +567,7 @@ app.post('/api/change-password', async (req, res) => {
         return sendError(res, 400, 'La contraseña nueva debe tener al menos 4 caracteres');
     }
 
-    try {
+    try { // Busca el password hasheado del usuario
         const found = await odooExec(
             'gestion_entrada.profesor',
             'search_read',
@@ -621,7 +581,7 @@ app.post('/api/change-password', async (req, res) => {
 
         const usuario = found[0];
 
-        const passwordCorrecta = await bcrypt.compare(currentPassword, usuario.user_pass || '');
+        const passwordCorrecta = await bcrypt.compare(currentPassword, usuario.user_pass || ''); // Compara contraseñas actuales como requisito indispensable para cambiarla
         if (!passwordCorrecta) {
             return res.status(401).json({
                 success: false,
@@ -630,8 +590,8 @@ app.post('/api/change-password', async (req, res) => {
             });
         }
 
-        const hashedPassword = await bcrypt.hash(newPassword, 10);
-        await odooExec('gestion_entrada.profesor', 'write', [[usuario.id], { user_pass: hashedPassword }]);
+        const hashedPassword = await bcrypt.hash(newPassword, 10); // Si la acutal es correcta hashea la nueva
+        await odooExec('gestion_entrada.profesor', 'write', [[usuario.id], { user_pass: hashedPassword }]); // y la guarda
 
         console.log(`Contraseña actualizada para ${username}`);
         return res.json({ success: true, message: 'Contraseña actualizada correctamente' });
@@ -640,7 +600,7 @@ app.post('/api/change-password', async (req, res) => {
     }
 });
 
-app.get('/api/user/:username', async (req, res) => {
+app.get('/api/user/:username', async (req, res) => { // Busqueda de datos de usuario en base a username
     const username = req.params.username;
     if (!username || username === 'null' || username === 'undefined') {
         return sendError(res, 400, 'Username invalido');
@@ -648,7 +608,7 @@ app.get('/api/user/:username', async (req, res) => {
 
     try {
         const result = await odooExec(
-            'gestion_entrada.profesor',
+            'gestion_entrada.profesor', 
             'search_read',
             [[['username', '=', username]]],
             { fields: ['name', 'surname', 'username', 'uid', 'is_management'], limit: 1 }
@@ -657,7 +617,7 @@ app.get('/api/user/:username', async (req, res) => {
         if (!result || result.length === 0) return res.status(404).json({ success: false, message: 'Usuario no encontrado' });
 
         const userData = result[0];
-        return res.json({
+        return res.json({ // Formateo de datos en json
             success: true,
             user: {
                 nombre: userData.name,
@@ -672,22 +632,22 @@ app.get('/api/user/:username', async (req, res) => {
     }
 });
 
-app.post('/api/importar-csv/:tipo', upload.single('archivo'), async (req, res) => {
-    const tipo = req.params.tipo;
+app.post('/api/importar-csv/:tipo', upload.single('archivo'), async (req, res) => { // Endpoint para la importacion masiva de datos
+    const tipo = req.params.tipo; // Tipos de datos profesores o alumnos
     if (!['alumnos', 'profesores'].includes(tipo)) {
         return sendError(res, 400, 'Tipo invalido. Debe ser alumnos o profesores');
     }
+    // Si el archivo no se ha subido correctamente
     if (!req.file) return sendError(res, 400, 'No se ha recibido el archivo');
 
-    const model = tipo === 'alumnos' ? 'gestion_entrada.alumno' : 'gestion_entrada.profesor';
+    const model = tipo === 'alumnos' ? 'gestion_entrada.alumno' : 'gestion_entrada.profesor'; // Variable para cargar el modelo correcto
 
-    //Los CSV del centro usan punto y coma como separador y vienen con comillas.
-    const filas = await new Promise((resolve, reject) => {
+    const filas = await new Promise((resolve, reject) => { 
         const resultados = [];
-        Readable.from(req.file.buffer)
-            .pipe(csvParser({ separator: ';' }))
+        Readable.from(req.file.buffer) // Convierte buffer de la RAM en stream leible
+            .pipe(csvParser({ separator: ';' })) // usa csvParser para leer delimitadores, en este caso ';'
             .on('data', (data) => resultados.push(data))
-            .on('end', () => resolve(resultados))
+            .on('end', () => resolve(resultados)) // Una vez finalizado resuelve la promesa
             .on('error', reject);
     }).catch((err) => {
         console.error('Error parseando CSV:', err.message);
@@ -696,10 +656,8 @@ app.post('/api/importar-csv/:tipo', upload.single('archivo'), async (req, res) =
 
     if (filas === null) return sendError(res, 400, 'CSV mal formado');
 
-    //Lee un campo de la fila probando varios nombres de columna posibles, ya que
-    //el CSV puede traer ligeras variaciones en los encabezados. Devuelve '' si
-    //ninguno existe.
-    const leerCampo = (fila, ...nombres) => {
+   
+    const leerCampo = (fila, ...nombres) => { // Funcion que busca posibles nombre de cabecera de columna ya que los nombres de pincel ekade pueden cambiar
         for (const nombre of nombres) {
             if (fila[nombre] !== undefined && String(fila[nombre]).trim() !== '') {
                 return String(fila[nombre]).trim();
@@ -709,17 +667,17 @@ app.post('/api/importar-csv/:tipo', upload.single('archivo'), async (req, res) =
     };
 
     let creados = 0, errores = 0;
-    const detallesErrores = [];
-    const creadosLista = [];
-    const fallidosLista = [];
+    const detallesErrores = []; // Logs de errores por fila
+    const creadosLista = []; // Datos para mostrar por interfaz quienes se insertaron
+    const fallidosLista = []; // y quienes fallaron
 
     for (let i = 0; i < filas.length; i++) {
         const fila = filas[i];
         const numeroFila = i + 2;
         let values = {};
-        //Datos para las listas que se devuelven al frontend (modal de resultado)
         let infoPersona = { nombre: '', apellidos: '', extra: '' };
-
+        
+        // Va creando los diferentes usuarios comprobando el tipo de usrio, formateando los datos y posteriormente insertandolo en la bse de datos
         if (tipo === 'profesores') {
             const nombre = leerCampo(fila, 'Nombre');
             const apellido1 = leerCampo(fila, 'Primer Apellido');
@@ -760,7 +718,7 @@ app.post('/api/importar-csv/:tipo', upload.single('archivo'), async (req, res) =
                 fallidosLista.push({ ...infoPersona, motivo });
                 continue;
             }
-        } else {
+        } else { // Ocurre igual si es alumno
             const nombre = leerCampo(fila, 'Nombre');
             const apellido1 = leerCampo(fila, 'Primer apellido', 'Primer Apellido');
             const apellido2 = leerCampo(fila, 'Segundo apellido', 'Segundo Apellido');
@@ -809,7 +767,7 @@ app.post('/api/importar-csv/:tipo', upload.single('archivo'), async (req, res) =
         }
 
         try {
-            await odooExec(model, 'create', [values]);
+            await odooExec(model, 'create', [values]); // Creacion del usuario
             creados++;
             creadosLista.push(infoPersona);
         } catch (err) {
@@ -819,7 +777,7 @@ app.post('/api/importar-csv/:tipo', upload.single('archivo'), async (req, res) =
         }
     }
 
-    return res.json({
+    return res.json({ // retorna los datos recogidos durante la importacion
         success: true,
         message: `Creados: ${creados}, Errores: ${errores}`,
         creados,
@@ -830,9 +788,9 @@ app.post('/api/importar-csv/:tipo', upload.single('archivo'), async (req, res) =
     });
 });
 
-app.get('/api/exportar-accesos', async (req, res) => {
+app.get('/api/exportar-accesos', async (req, res) => { // Endpoint para la exportacion masiva de registros
     try {
-        const registros = await odooExec(
+        const registros = await odooExec( // Consulta para extraer los ultimos 1000 registros
             'gestion_entrada.registro',
             'search_read',
             [[]],
@@ -840,7 +798,7 @@ app.get('/api/exportar-accesos', async (req, res) => {
         );
 
         const cabecera = 'uid,usr_type,reg_type,dateTime\n';
-        const cuerpo = (registros || []).map(r => {
+        const cuerpo = (registros || []).map(r => { // Preparacion de datos para el csv
             const escapar = (v) => {
                 if (v === null || v === undefined || v === false) return '';
                 const s = String(v);
@@ -852,14 +810,15 @@ app.get('/api/exportar-accesos', async (req, res) => {
         }).join('\n');
 
         const fechaArchivo = new Date().toISOString().split('T')[0];
-        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8'); // Indica tipo de archivo y charset
         res.setHeader('Content-Disposition', `attachment; filename="accesos_${fechaArchivo}.csv"`);
-        res.send('\uFEFF' + cabecera + cuerpo);
+        res.send('\uFEFF' + cabecera + cuerpo); // Para que no se corrompa con caracteres españles
     } catch (err) {
         return sendError(res, 500, err.message);
     }
 });
 
+// Registros que definen los tipos de datos para cada registro
 const REG_TYPES_ENTRADA = ['entrada_puntual', 'entrada_recreo', 'entrada_tardia', 'entrada_prof'];
 const REG_TYPES_SALIDA  = ['salida_anticipada', 'salida_recreo', 'salida_bus',
                            'salida_anticipada_autorizada', 'salida_regular', 'salida_prof'];
@@ -867,14 +826,7 @@ const REG_TYPES_SALIDA  = ['salida_anticipada', 'salida_recreo', 'salida_bus',
 const REG_TYPES_ASISTENCIA = ['entrada_puntual', 'entrada_recreo', 'entrada_tardia'];
 const REG_TYPES_INCIDENCIA = ['error', 'no_autorizado'];
 
-//============================================
-//HELPER: chartData para una semana concreta
-//
-//Recibe una fecha YYYY-MM-DD que pertenece a la semana a graficar.
-//Calcula el lunes de esa semana y agrupa los registros del L al V en 4 segmentos
-//por entrada/salida. Devuelve el array de 5 dias listo para pintar.
-//============================================
-async function buildChartDataForWeek(fechaCualquieraDeLaSemana) {
+async function buildChartDataForWeek(fechaCualquieraDeLaSemana) { // Construccion del grafico
     //Calculamos el lunes de la semana de la fecha dada
     const ref = new Date(fechaCualquieraDeLaSemana + 'T00:00:00Z');
     const diaSem = ref.getUTCDay();  //0 dom, 1 lun, ... 6 sab
@@ -883,19 +835,19 @@ async function buildChartDataForWeek(fechaCualquieraDeLaSemana) {
     const lunes = new Date(ref);
     lunes.setUTCDate(ref.getUTCDate() - offsetLunes);
     const sabado = new Date(lunes);
-    sabado.setUTCDate(lunes.getUTCDate() + 5);  //L+5 = sabado (excluido al filtrar)
+    sabado.setUTCDate(lunes.getUTCDate() + 5);  // Limpiamos hasta el viernes
 
     const fechaInicio = lunes.toISOString().split('T')[0] + ' 00:00:00';
     const fechaFin    = sabado.toISOString().split('T')[0] + ' 00:00:00';
 
-    const records = await odooExec(
+    const records = await odooExec( // Extraemos registros de los 5 dias laborales
         'gestion_entrada.registro',
         'search_read',
         [[['dateTime', '>=', fechaInicio], ['dateTime', '<', fechaFin]]],
         { fields: ['dateTime', 'reg_type'] }
     );
 
-    const chartDataMap = {
+    const chartDataMap = { // Estructuracion de los datos en base al dia de la semana
         1: { day: 'L', e_puntuales: 0, e_tardias: 0, e_recreo: 0, e_prof: 0, s_regulares: 0, s_anticipadas: 0, s_busrecreo: 0, s_prof: 0 },
         2: { day: 'M', e_puntuales: 0, e_tardias: 0, e_recreo: 0, e_prof: 0, s_regulares: 0, s_anticipadas: 0, s_busrecreo: 0, s_prof: 0 },
         3: { day: 'X', e_puntuales: 0, e_tardias: 0, e_recreo: 0, e_prof: 0, s_regulares: 0, s_anticipadas: 0, s_busrecreo: 0, s_prof: 0 },
@@ -903,7 +855,7 @@ async function buildChartDataForWeek(fechaCualquieraDeLaSemana) {
         5: { day: 'V', e_puntuales: 0, e_tardias: 0, e_recreo: 0, e_prof: 0, s_regulares: 0, s_anticipadas: 0, s_busrecreo: 0, s_prof: 0 },
     };
 
-    (records || []).forEach(record => {
+    (records || []).forEach(record => { // Itera sobre los datos de odoo y hace el calculo de la cantidad de cada cosa
         if (!record.dateTime) return;
         const recordDate = new Date(record.dateTime.replace(' ', 'T') + 'Z');
         const diaSemana = recordDate.getUTCDay();
@@ -920,7 +872,7 @@ async function buildChartDataForWeek(fechaCualquieraDeLaSemana) {
         else if (t === 'salida_prof')                                            d.s_prof++;
     });
 
-    return {
+    return { // Convierte el diccionario que tenemos ahora ha la estructra JSON necesaria para que se forme correctamente el grafico
         lunes: lunes.toISOString().split('T')[0],
         viernes: new Date(lunes.getTime() + 4 * 86400000).toISOString().split('T')[0],
         chartData: [1, 2, 3, 4, 5].map(dayIndex => {
@@ -948,7 +900,7 @@ async function buildChartDataForWeek(fechaCualquieraDeLaSemana) {
     };
 }
 
-app.get('/api/dashboard', async (req, res) => {
+app.get('/api/dashboard', async (req, res) => { // Endpoint para dar las metricas principales KPIS y grficos
     try {
         const totalAlumnos = await odooExec('gestion_entrada.alumno', 'search_count', [[]]);
 
@@ -967,31 +919,28 @@ app.get('/api/dashboard', async (req, res) => {
             if (REG_TYPES_ASISTENCIA.includes(r.reg_type)) asistenciaHoy++;
             if (REG_TYPES_INCIDENCIA.includes(r.reg_type)) incidenciasHoy++;
         });
-        const asistenciaMedia = totalAlumnos > 0
+        
+        const asistenciaMedia = totalAlumnos > 0 // Calcula el prodcentaje de alumnos que vineieron hoy
             ? Math.min(Math.round((asistenciaHoy / totalAlumnos) * 100), 100)
             : 0;
 
-        //Semana principal:
-        //  - si llega ?semana=YYYY-MM-DD, esa
-        //  - si no, la semana actual (hoy)
+            //COntruye los datos de la semana principal
         const semanaParam = req.query.semana && /^\d{4}-\d{2}-\d{2}$/.test(req.query.semana)
             ? req.query.semana
             : hoyStr;
         const semanaData = await buildChartDataForWeek(semanaParam);
 
-        //Semana de comparacion (opcional): si llega ?semana2=YYYY-MM-DD
+        //Funcionalidad de modo comparacion
         let semana2Data = null;
         if (req.query.semana2 && /^\d{4}-\d{2}-\d{2}$/.test(req.query.semana2)) {
             semana2Data = await buildChartDataForWeek(req.query.semana2);
         }
 
-        return res.json({
+        return res.json({ // Devolucion de los datos
             success: true,
             kpis: { asistenciaHoy, incidenciasHoy, asistenciaMedia: `${asistenciaMedia}%` },
             semana: semanaData,
             semana2: semana2Data,
-            //Compatibilidad hacia atras: aun servimos chartData simple para que
-            //clientes antiguos no rompan.
             chartData: semanaData.chartData,
         });
     } catch (err) {
@@ -999,12 +948,13 @@ app.get('/api/dashboard', async (req, res) => {
     }
 });
 
-app.get('/api/registros-paginado', async (req, res) => {
-    const tipo   = String(req.query.tipo || '').toLowerCase();
+app.get('/api/registros-paginado', async (req, res) => { // Tabla de registros
+    const tipo   = String(req.query.tipo || '').toLowerCase(); // Tipo de pestaña entrada o salida
     const fecha  = String(req.query.fecha || '').trim();
     const curso  = req.query.curso ? String(req.query.curso).trim() : null;
     const usrTypeFiltro = req.query.usr_type ? String(req.query.usr_type).trim() : null;
     const buscar = req.query.buscar ? String(req.query.buscar).trim() : null;
+    // Limite de la paginacion ya que es infinita, hace peticiones de 200 en 200
     const limit  = Math.min(parseInt(req.query.limit, 10) || 50, 200);
     const offset = parseInt(req.query.offset, 10) || 0;
 
@@ -1020,6 +970,7 @@ app.get('/api/registros-paginado', async (req, res) => {
     const fechaFin    = `${fecha} 23:59:59`;
 
     try {
+        // Si se pide de un curso especifico se consulta solo a esos primeramente
         let uidsCurso = null;
         if (curso) {
             const alumnosCurso = await odooExec(
@@ -1045,35 +996,26 @@ app.get('/api/registros-paginado', async (req, res) => {
             domain.push(['uid', 'in', uidsCurso]);
         }
 
-        const todosRegistros = await odooExec(
+        const todosRegistros = await odooExec( // Coge datos crudos basados en fehca y curso
             'gestion_entrada.registro',
             'search_read',
             [domain],
             {
-                //Anadimos profesor_id (Many2one -> viene como [id, "Nombre Apellido"])
                 fields: ['uid', 'usr_type', 'reg_type', 'dateTime', 'profesor_id'],
                 order: 'dateTime desc',
                 limit: 1000,
             }
         ) || [];
 
-        //Primer filtro: solo entradas o solo salidas
+        //Primero se filtra por tipo entrada o salida
         const filtradosPorTipo = todosRegistros.filter(r => regTypes.includes(r.reg_type));
 
-        //Necesitamos enriquecer ANTES de aplicar usr_type/buscar porque esos
-        //filtros dependen del modelo (alumno/profesor) y del nombre real resueltos
-        //a partir del UID. La paginacion tambien se hace despues, sobre los datos
-        //ya filtrados.
-        //
-        //Como esto puede ser hasta ~1000 registros por dia, lo optimizamos:
-        //usamos un set de UIDs unicos (mismo alumno escaneado N veces solo se
-        //busca 1 vez). El cache buscarPersonaPorUid hace el resto.
         const uidsUnicos = [...new Set(filtradosPorTipo.map(r => r.uid).filter(Boolean))];
 
         const fieldsAlumno = ['name', 'surname', 'school_year', 'photo'];
         const fieldsProfesor = ['name', 'surname', 'photo'];
 
-        const resoluciones = await Promise.all(
+        const resoluciones = await Promise.all( // lanza n promesas asingcronas para buscar de quine es cada tarjeta
             uidsUnicos.map(uid =>
                 buscarPersonaPorUid(uid, fieldsAlumno, fieldsProfesor)
                     .then(r => ({ uid, r }))
@@ -1081,18 +1023,18 @@ app.get('/api/registros-paginado', async (req, res) => {
             )
         );
 
-        const indicePorUid = {};
+        const indicePorUid = {}; // Agrupacion de datos
         for (const { uid, r } of resoluciones) {
             indicePorUid[uid] = r;
         }
 
-        //Enriquecemos todos los registros del dia (los filtrados por tipo)
+        // Combinacion de datos añadoendo nombre, foto
         const enriquecidosTodos = filtradosPorTipo.map(r => {
             const res = indicePorUid[r.uid];
             const persona = (res && res.found) ? res.persona : null;
             const modelo  = (res && res.found) ? res.modelo  : null;
 
-            //profesor_id en Odoo (Many2one) viene como [id, "Nombre Apellido"]
+            //profesor_id en Odoo viene como [id, "Nombre Apellido"]
             let operadorNombre = null;
             let operadorIdReg = null;
             if (Array.isArray(r.profesor_id) && r.profesor_id.length >= 2) {
@@ -1115,24 +1057,21 @@ app.get('/api/registros-paginado', async (req, res) => {
             };
         });
 
-        //Filtros que requieren los datos enriquecidos:
-        //  - usr_type ('alumno' o 'profesor')
-        //  - buscar (case-insensitive en nombre + operadorNombre)
         let filtradosFinales = enriquecidosTodos;
-        if (usrTypeFiltro === 'alumno' || usrTypeFiltro === 'profesor') {
+        if (usrTypeFiltro === 'alumno' || usrTypeFiltro === 'profesor') { // Filtrado de tipo
             filtradosFinales = filtradosFinales.filter(r => r.usr_type === usrTypeFiltro);
         }
-        if (buscar) {
+        if (buscar) { // Filtro en barra de busqueda
             const buscarLower = buscar.toLowerCase();
             filtradosFinales = filtradosFinales.filter(r => {
                 const enNombre   = (r.nombre || '').toLowerCase().includes(buscarLower);
                 const enOperador = (r.operadorNombre || '').toLowerCase().includes(buscarLower);
-                return enNombre || enOperador;
+                return enNombre || enOperador; // Se ecuentra si el usuario se llama asi o el profesor se llama asi
             });
         }
 
-        const total = filtradosFinales.length;
-        const enriquecidos = filtradosFinales.slice(offset, offset + limit);
+        const total = filtradosFinales.length; // Calculo de total de elemntos para que el front sepa cunado detener el scroll
+        const enriquecidos = filtradosFinales.slice(offset, offset + limit); // paginacion que extrae solo el bloque que se pide
 
         return res.json({
             success: true,
@@ -1147,7 +1086,7 @@ app.get('/api/registros-paginado', async (req, res) => {
 });
 
 app.post('/api/vincular-nfc', async (req, res) => {
-    const { id, tipo, uid } = req.body;
+    const { id, tipo, uid } = req.body; // Se extrae el id del usuario a escanear, el tipo y el uid a vincular
 
     if (!id || !tipo || !uid) {
         return sendError(res, 400, 'Faltan datos obligatorios (id, tipo, uid)');
@@ -1157,13 +1096,10 @@ app.post('/api/vincular-nfc', async (req, res) => {
     }
 
     try {
-        //Normalizamos a UID corto: el lector USB solo lee el prefijo, asi que
-        //guardamos siempre esa longitud comun. Da igual si la lectura vino del
-        //movil (UID largo) o del USB (UID corto), en la BD queda el corto.
-        const uidLimpio = prefijoUid(uid);
+        const uidLimpio = prefijoUid(uid); // Normalizacion de id
         const idNum = parseInt(id, 10);
 
-        const existeAlumno = await odooExec(
+        const existeAlumno = await odooExec( // Verificacion de si existe o no un usuario ya con ese uid
             'gestion_entrada.alumno',
             'search_read',
             [[['uid', '=', uidLimpio]]],
@@ -1173,7 +1109,7 @@ app.post('/api/vincular-nfc', async (req, res) => {
             const ocupado = existeAlumno[0];
             const esEsteMismo = tipo === 'alumno' && ocupado.id === idNum;
             if (!esEsteMismo) {
-                return res.status(409).json({
+                return res.status(409).json({ // Si la tiene otro devuelve error 
                     success: false,
                     code: 'UID_EN_USO',
                     message: `UID ya asignado a ${ocupado.name} ${ocupado.surname || ''}`.trim(),
@@ -1182,7 +1118,7 @@ app.post('/api/vincular-nfc', async (req, res) => {
             }
         }
 
-        const existeProfesor = await odooExec(
+        const existeProfesor = await odooExec( // Misma logica anterior pero con los profesores
             'gestion_entrada.profesor',
             'search_read',
             [[['uid', '=', uidLimpio]]],
@@ -1201,6 +1137,7 @@ app.post('/api/vincular-nfc', async (req, res) => {
             }
         }
 
+        // si la tarjeta esta libre ejecuta la actualizacion del usaurio añadiendole el uid nuevo
         const modelo = tipo === 'alumno' ? 'gestion_entrada.alumno' : 'gestion_entrada.profesor';
         await odooExec(modelo, 'write', [[idNum], { uid: uidLimpio }]);
 
@@ -1212,6 +1149,6 @@ app.post('/api/vincular-nfc', async (req, res) => {
 });
 
 const PORT = 3001;
-app.listen(PORT, '0.0.0.0', () => {
+app.listen(PORT, '0.0.0.0', () => { // Metodo para encender el servidor y que escuche en todas las interfaces
     console.log(`Server ready at port ${PORT}`);
 });
