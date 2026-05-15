@@ -54,19 +54,16 @@ export default function StudentDetailScreen({ route }) {
   const [loading, setLoading] = useState(false);
   const [registros, setRegistros] = useState([]);
 
-  //Helper para mostrar alertas: en web usa window.alert, en movil usa Alert.alert
   const mostrarAlerta = (titulo, mensaje) => {
     if (Platform.OS === 'web') window.alert(`${titulo}\n\n${mensaje}`);
     else Alert.alert(titulo, mensaje);
   };
 
-  //Si es un alumno existente y tiene NFC, cargamos su historial al entrar
   useEffect(() => {
     if (!isNew && student.uid) {
       cargarHistorial(student.uid);
     }
-    //Solo se ejecuta al montar el componente
-    //eslint-disable-next-line react-hooks/exhaustive-deps
+  
   }, []);
 
   const cargarHistorial = async (uid) => {
@@ -80,9 +77,7 @@ export default function StudentDetailScreen({ route }) {
     }
   };
 
-  //============================================
-  //SELECCIONAR FOTO
-  //============================================
+
 
   const pickImage = async () => {
     try {
@@ -103,12 +98,9 @@ export default function StudentDetailScreen({ route }) {
     }
   };
 
-  //============================================
-  //GUARDAR (crear o actualizar)
-  //============================================
+
 
   const handleSave = async () => {
-    //Validacion de campos obligatorios
     if (!name.trim() || !surname.trim() || !schoolYear.trim() || !photo || !birthDate.trim() || !email.trim()) {
       mostrarAlerta(
         'Campos incompletos',
@@ -131,7 +123,6 @@ export default function StudentDetailScreen({ route }) {
         birth_date: fechaParaOdoo,
       };
 
-      //POST para crear nuevo, PUT para actualizar existente
       const data = isNew
         ? await apiClient.post(API_ENDPOINTS.ALUMNOS, body)
         : await apiClient.put(API_ENDPOINTS.ALUMNO_BY_ID(student.id), body);
@@ -153,9 +144,7 @@ export default function StudentDetailScreen({ route }) {
     }
   };
 
-  //============================================
-  //ELIMINAR
-  //============================================
+ 
 
   const ejecutarBorrado = async () => {
     setLoading(true);
@@ -188,9 +177,7 @@ export default function StudentDetailScreen({ route }) {
     }
   };
 
-  //============================================
-  //HISTORIAL: separamos entradas y salidas
-  //============================================
+
 
   const entradas = registros.filter(reg => String(reg.reg_type).toLowerCase().includes('entrada'));
   const salidas = registros.filter(reg => !String(reg.reg_type).toLowerCase().includes('entrada'));
@@ -286,7 +273,6 @@ export default function StudentDetailScreen({ route }) {
         )}
       </View>
 
-      {/*Historial de accesos (solo para alumnos existentes)*/}
       {!isNew && (
         <>
           <Text style={[styles.sectionTitle, { marginLeft: 4, marginBottom: 12 }]}>
