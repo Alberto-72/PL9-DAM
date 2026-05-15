@@ -67,8 +67,7 @@ export default function TeacherDetailScreen({ route }) {
     if (!isNew && teacher.uid) {
       cargarHistorial(teacher.uid);
     }
-    //Solo se ejecuta al montar el componente
-    //eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, []);
 
   const cargarHistorial = async (uid) => {
@@ -82,9 +81,6 @@ export default function TeacherDetailScreen({ route }) {
     }
   };
 
-  //============================================
-  //SELECCIONAR FOTO
-  //============================================
 
   const pickImage = async () => {
     try {
@@ -105,12 +101,8 @@ export default function TeacherDetailScreen({ route }) {
     }
   };
 
-  //============================================
-  //GUARDAR (crear o actualizar)
-  //============================================
 
   const handleSave = async () => {
-    //Validacion de campos obligatorios. Contrasena solo es obligatoria al crear.
     if (!name.trim() || !surname.trim() || !photo || !email.trim() || !username.trim() || !birthDate.trim() || (isNew && !password.trim())) {
       mostrarAlerta(
         'Campos incompletos',
@@ -132,12 +124,10 @@ export default function TeacherDetailScreen({ route }) {
         photo,
       };
 
-      //Solo enviamos la contrasena si el campo no esta vacio (asi en edicion no se cambia)
       if (password.trim() !== '') {
         payload.user_pass = password.trim();
       }
 
-      //POST para crear nuevo, PUT para actualizar existente
       const data = isNew
         ? await apiClient.post(API_ENDPOINTS.PROFESORES, payload)
         : await apiClient.put(API_ENDPOINTS.PROFESOR_BY_ID(teacher.id), payload);
@@ -159,9 +149,7 @@ export default function TeacherDetailScreen({ route }) {
     }
   };
 
-  //============================================
-  //ELIMINAR
-  //============================================
+
 
   const ejecutarBorrado = async () => {
     setLoading(true);
@@ -194,9 +182,7 @@ export default function TeacherDetailScreen({ route }) {
     }
   };
 
-  //============================================
-  //HISTORIAL: separamos entradas y salidas
-  //============================================
+
 
   const entradas = registros.filter(reg => String(reg.reg_type).toLowerCase().includes('entrada'));
   const salidas = registros.filter(reg => !String(reg.reg_type).toLowerCase().includes('entrada'));
@@ -302,7 +288,6 @@ export default function TeacherDetailScreen({ route }) {
         )}
       </View>
 
-      {/*Historial de accesos (solo para profesores existentes)*/}
       {!isNew && (
         <>
           <Text style={[styles.sectionTitle, { marginLeft: 4, marginBottom: 12 }]}>

@@ -6,12 +6,7 @@ import { API_ENDPOINTS, API_BASE_URL } from '../../config/api';
 import { apiClient } from '../../services/apiClient';
 import { useAuth } from '../../context/AuthContext';
 
-//============================================
-//CONSTANTES DE HORARIOS DEL CENTRO
-//
-//Si cambian los horarios del centro, se modifican aqui en un solo sitio.
-//Todos los valores en minutos desde medianoche para facilitar comparaciones.
-//============================================
+
 const HORARIO = {
   inicioJornada:      8 * 60 + 5,    //08:05 - antes -> entrada puntual
   inicioRecreo:      10 * 60 + 45,   //10:45
@@ -21,9 +16,7 @@ const HORARIO = {
   finVentanaRegular: 14 * 60 + 15,   //14:15
 };
 
-//============================================
-//TIPOS reg_type SEGUN MODELO ODOO
-//============================================
+
 const REG_TYPE = {
   ENTRADA_PUNTUAL:               'entrada_puntual',
   ENTRADA_RECREO:                'entrada_recreo',
@@ -54,9 +47,7 @@ const ETIQUETAS = {
   [REG_TYPE.NO_AUTORIZADO]:                 'No Autorizado',
 };
 
-//============================================
-//HELPERS DE TIEMPO Y EDAD
-//============================================
+
 
 function minutosAhora() {
   const ahora = new Date();
@@ -68,8 +59,6 @@ function fechaHoy() {
   return `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}-${String(hoy.getDate()).padStart(2,'0')}`;
 }
 
-//Cumpleanios real, no resta de anios. Alguien nacido en diciembre 2008
-//no es mayor de edad hoy (mayo 2026) hasta cumplir 18 en diciembre 2026.
 function esMayorDeEdad(fechaNacimiento) {
   if (!fechaNacimiento) return false;
   const hoy = new Date();
@@ -82,23 +71,15 @@ function esMayorDeEdad(fechaNacimiento) {
   return edad >= 18;
 }
 
-//============================================
-//COMPONENTE PRINCIPAL
-//============================================
+
 export default function ScannerScreen({ route, navigation }) {
-  //Username del profesor logueado en el movil. Lo necesitamos para que el backend
-  //registre quien opera el escaneo en el campo profesor_id (operador, no escaneado).
+
   const { username: operadorUsername } = useAuth();
 
   const [alumno, setAlumno] = useState(null);
   const [escaneando, setEscaneando] = useState(false);
   const [uidWeb, setUidWeb] = useState('');
 
-  //Modo manual: si esta activo, la proxima pasada se fuerza al tipo elegido.
-  //Se resetea automaticamente despues de cada pasada para no afectar las siguientes.
-  // - null            : modo automatico (default)
-  // - 'forzar_entrada': proxima pasada sera tratada como entrada
-  // - 'forzar_salida' : proxima pasada sera tratada como salida
   const [modoManual, setModoManual] = useState(null);
   const [modalManualVisible, setModalManualVisible] = useState(false);
 
@@ -112,7 +93,6 @@ export default function ScannerScreen({ route, navigation }) {
       setBindingMensaje(null);
       navigation.setParams({ usuarioAVincular: undefined });
     }
-    //eslint-disable-next-line react-hooks/exhaustive-deps
   }, [route.params?.usuarioAVincular]);
 
   //Inicializa NFC al montar
@@ -147,22 +127,9 @@ export default function ScannerScreen({ route, navigation }) {
       });
       navigation.setParams({ studentToValidate: undefined });
     }
-    //eslint-disable-next-line react-hooks/exhaustive-deps
   }, [route.params?.studentToValidate]);
 
-  //============================================
-  //LLAMADAS AL BACKEND
-  //============================================
 
-  //Manda el registro al backend.
-  //
-  //origen_lector: el backend usa este campo para decidir quien firma como profesor_id:
-  //  - 'usb'   -> el operador es 'lectornfc' (lector anonimo, no sabemos quien lo usa)
-  //  - 'movil' -> el operador es el usuario logueado en la app (operador_username)
-  //
-  //operador_username: solo se usa cuando origen_lector === 'movil'. Es el username del
-  //profesor logueado en este movil. El backend busca su id en Odoo y lo pone como
-  //profesor_id del registro (cuando se ha escaneado un alumno).
   const addRegister = async (uid, usr_type, reg_type) => {
     try {
       const now = new Date();
@@ -179,13 +146,6 @@ export default function ScannerScreen({ route, navigation }) {
     }
   };
 
-  //Consulta el historial de hoy. Devuelve { lista, total, registrosRecreo }.
-  //
-  //Lo usamos para:
-  //  - Profesores: alternar entrada_prof / salida_prof por paridad
-  //  - Alumnos en recreo: alternar salida_recreo / entrada_recreo
-  //  - Alumnos en franjas intermedias: decidir entrada (si no hay registros previos)
-  //    o salida (si ya hay)
   const consultarHistorialHoy = async (uid) => {
     try {
       const url = `${API_BASE_URL}/api/registros/${encodeURIComponent(uid)}?fecha=${fechaHoy()}`;
@@ -204,15 +164,7 @@ export default function ScannerScreen({ route, navigation }) {
     }
   };
 
-  //============================================
-  //RESOLUCION DEL reg_type
-  //
-  //Devuelve un objeto:
-  //  { tipo: 'auto', regType, estado }    -> decision automatica
-  //  { tipo: 'preguntar' }                 -> menor sin autorizacion, lanzar dialogo
-  //
-  //"estado" es codigo de UI: 'exito', 'precaucion', 'error'
-  //============================================
+
   const resolverRegType = async (datosUsuario) => {
     const minutos = minutosAhora();
     const enRecreo = minutos >= HORARIO.inicioRecreo && minutos <= HORARIO.finRecreo;
@@ -252,27 +204,13 @@ export default function ScannerScreen({ route, navigation }) {
     }
 
     //CASO 4: Despues de 14:15 -> salida regular (igual que dentro de la ventana).
-    //Decision del centro: cualquier salida desde las 14:00 en adelante se considera
-    //salida regular, sin distincion de "ventana de gracia". Aunque salgan a las 18:00,
-    //sigue siendo una salida normal del centro.
+    //Decision del centro: cualquier salida desde las 14:00 en adelante se considera salida regular
+
     if (minutos >= HORARIO.finVentanaRegular) {
       return { tipo: 'auto', regType: REG_TYPE.SALIDA_REGULAR, estado: 'exito' };
     }
 
     //CASO 5: Franjas intermedias (8:05-10:45 y 11:15-13:50)
-    //
-    //Logica de alternancia por paridad (igual que profesores y recreo):
-    //  - Pasadas pares (0, 2, 4...) -> es ENTRADA (entrada_tardia)
-    //  - Pasadas impares (1, 3, 5...) -> es SALIDA
-    //
-    //Esto cubre el caso de un alumno que entra-sale-vuelve a entrar-vuelve a salir
-    //el mismo dia (cita medica con vuelta al centro).
-    //Pega: si se olvida una pasada, las siguientes quedan invertidas. Para esos
-    //casos esta el "modo manual" oculto en el engranaje.
-    //
-    //En el caso de salida, aplicamos el flujo mayor/menor:
-    //  - Mayor de edad: salida_anticipada (sin "autorizada", se va libremente)
-    //  - Menor de edad: preguntar al adulto presente
     const { total } = await consultarHistorialHoy(datosUsuario.uid);
     const esPar = total % 2 === 0;
 
@@ -282,9 +220,6 @@ export default function ScannerScreen({ route, navigation }) {
     }
 
     //Pasada impar -> es una salida.
-    //REGLA: mayores de edad pueden salir libremente -> salida_anticipada (sin "autorizada")
-    //       menores necesitan autorizacion del adulto presente -> preguntar
-    //La etiqueta "salida_anticipada_autorizada" se reserva para menores con OK.
     const esAdulto = esMayorDeEdad(datosUsuario.fechaNacimiento);
     if (esAdulto) {
       return { tipo: 'auto', regType: REG_TYPE.SALIDA_ANTICIPADA, estado: 'precaucion' };
@@ -294,16 +229,6 @@ export default function ScannerScreen({ route, navigation }) {
     return { tipo: 'preguntar' };
   };
 
-  //============================================
-  //APLICAR MODO MANUAL
-  //
-  //Si el profesor activo el modo manual oculto antes de pasar la tarjeta,
-  //esta funcion sobreescribe el reg_type calculado por la logica automatica.
-  //Solo afecta a alumnos (los profesores siempre van por historial).
-  //
-  //Devuelve null si no hay modo manual activo, o un objeto { tipo, regType, estado }
-  //para sustituir la decision normal.
-  //============================================
   const aplicarModoManual = (datosUsuario) => {
     if (!modoManual) return null;
     if (datosUsuario.usr_type !== 'alumno') return null; //modo manual no aplica a profesores
@@ -345,9 +270,7 @@ export default function ScannerScreen({ route, navigation }) {
     return null;
   };
 
-  //============================================
-  //PROCESAR VALIDACION
-  //============================================
+
   const procesarValidacion = async (datosUsuario) => {
     //Primero comprobamos si hay modo manual activo
     const decisionManual = aplicarModoManual(datosUsuario);
@@ -532,9 +455,7 @@ export default function ScannerScreen({ route, navigation }) {
     }
   };
 
-  //============================================
-  //MODO MANUAL: helpers de UI
-  //============================================
+
   const activarModoManual = (tipo) => {
     setModoManual(tipo);
     setModalManualVisible(false);
@@ -545,9 +466,7 @@ export default function ScannerScreen({ route, navigation }) {
     setModalManualVisible(false);
   };
 
-  //============================================
-  //RENDER: pantalla de escaneo (sin alumno cargado)
-  //============================================
+
   if (modoBinding) {
     return (
       <View style={styles.container}>
@@ -631,9 +550,7 @@ export default function ScannerScreen({ route, navigation }) {
   if (!alumno) {
     return (
       <View style={styles.container}>
-        {/*Boton de engranaje arriba a la derecha para abrir el modo manual.
-           Si hay un modo manual activo, el engranaje cambia de color para
-           dar feedback visual al profesor.*/}
+
         <TouchableOpacity
           style={styles.btnEngranaje}
           onPress={() => setModalManualVisible(true)}
@@ -659,7 +576,6 @@ export default function ScannerScreen({ route, navigation }) {
           <Text style={styles.tituloVacio}>{escaneando ? "Conectando..." : "Control de Acceso"}</Text>
           <Text style={styles.subtituloVacio}>{escaneando ? "Validando..." : "Pulsa y acerca la tarjeta."}</Text>
 
-          {/*Si hay modo manual activo, mostramos un aviso al profesor*/}
           {modoManual && (
             <View style={styles.avisoModoManual}>
               <Ionicons name="information-circle" size={16} color="#1D4ED8" style={{ marginRight: 6 }} />
@@ -698,8 +614,6 @@ export default function ScannerScreen({ route, navigation }) {
           )}
         </View>
 
-        {/*Modal del modo manual: pulsando el engranaje aparece y el profesor
-           puede forzar la proxima pasada como entrada o salida.*/}
         <Modal
           animationType="fade"
           transparent
@@ -765,9 +679,6 @@ export default function ScannerScreen({ route, navigation }) {
     );
   }
 
-  //============================================
-  //RENDER: pantalla de resultado
-  //============================================
   let badgeStyle = styles.badgeExito;
   let textStyle = styles.textoExito;
   let iconName = "checkmark-circle";
@@ -824,7 +735,6 @@ const styles = StyleSheet.create({
     padding: 20,
     justifyContent: 'center',
   },
-  //Boton de engranaje arriba a la derecha
   btnEngranaje: {
     position: 'absolute',
     top: 16,
@@ -964,7 +874,6 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
 
-  //Modal del modo manual
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.4)',

@@ -1,24 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  FlatList,
-  ActivityIndicator,
-  StyleSheet,
-  TouchableOpacity,
-  Image,
-  TextInput,
-  Alert,
-  Platform,
-  Modal,
-  ScrollView,
-} from 'react-native';
+import {  View,  Text,  FlatList,  ActivityIndicator,  StyleSheet,  TouchableOpacity,
+  Image,  TextInput,  Alert,  Platform,  Modal,  ScrollView,} from 'react-native';
 import { Feather, Ionicons, MaterialCommunityIcons, FontAwesome5 } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import { fetchOdooData } from '../../services/LogInService';
 import { API_ENDPOINTS } from '../../config/api';
 import { apiClient } from '../../services/apiClient';
-//Fuente unica de cursos: ver src/config/cursos.js
 import { FILTRO_TODOS, getNombreCurso } from '../../config/cursos';
 
 export default function ListScreen({ route, navigation }) {
@@ -43,7 +30,7 @@ export default function ListScreen({ route, navigation }) {
   };
 
   const cargarDatos = async () => {
-    setLoading(true);
+    setLoading(true); // Activa el spinner
     const isAlumnado = type === 'alumnado';
     const model = isAlumnado ? 'gestion_entrada.alumno' : 'gestion_entrada.profesor';
 
@@ -64,18 +51,12 @@ export default function ListScreen({ route, navigation }) {
     setBusqueda('');
   }, [type]);
 
-  //============================================
-  //LISTA DE CURSOS DISPONIBLES PARA EL FILTRO
-  //
-  //Solo mostramos cursos que tengan al menos un alumno asignado.
-  //getNombreCurso() hace el fallback al codigo corto si no esta en MAPA_CURSOS.
-  //============================================
-  const cursosDisponibles = (() => {
-    const codigos = new Set();
+  const cursosDisponibles = (() => { // se crea lista en base a los que se estan mostrando
+    const codigos = new Set(); // Se usa sets para que no haya duplicados
     data.forEach(item => {
       if (item.school_year) codigos.add(item.school_year);
     });
-    return Array.from(codigos)
+    return Array.from(codigos) // convierte set en array
       .sort()
       .map(codigo => ({
         codigo,
@@ -88,17 +69,15 @@ export default function ListScreen({ route, navigation }) {
     ? 'Todos los cursos'
     : getNombreCurso(cursoFiltro);
 
-  //============================================
   //IMPORTACION CSV
-  //============================================
-
   const seleccionarCSV = async () => {
     try {
+      // Abre gestor de archivos nativo
       const result = await DocumentPicker.getDocumentAsync({
-        type: ['text/csv', 'text/comma-separated-values', '*/*'],
+        type: ['text/csv', 'text/comma-separated-values', '*/*'], // Copia a un directorio temporal para asegurar acceso seguro de lectura.
         copyToCacheDirectory: true,
       });
-
+      // Si el usuario no canceló el prompt modal
       if (!result.canceled) {
         const archivo = result.assets[0];
         await importarArchivo(archivo);
@@ -127,6 +106,7 @@ export default function ListScreen({ route, navigation }) {
     }
 
     try {
+      // Resuelve endpoint correcto
       const tipo = type === 'alumnado' ? 'alumnos' : 'profesores';
       const resData = await apiClient.post(API_ENDPOINTS.IMPORTAR_CSV(tipo), formData);
 
@@ -147,9 +127,7 @@ export default function ListScreen({ route, navigation }) {
     }
   };
 
-  //============================================
   //FILTROS COMBINADOS
-  //============================================
   const textoBusqueda = busqueda.trim().toLowerCase();
 
   const datosFiltrados = data.filter(item => {
@@ -157,6 +135,10 @@ export default function ListScreen({ route, navigation }) {
     const apellido = item.surname ? String(item.surname).toLowerCase() : '';
     const coincideNombre = nombre.includes(textoBusqueda) || apellido.includes(textoBusqueda);
 
+    // Condicional para el curso: 
+    // - Si es la pestaña de profesores, el filtro de curso se ignora (true).
+    // - Si el filtro está en TODOS, se ignora (true).
+    // - Si no, debe coincidir estrictamente.
     const coincideCurso = type !== 'alumnado'
       || cursoFiltro === FILTRO_TODOS
       || item.school_year === cursoFiltro;
@@ -164,21 +146,20 @@ export default function ListScreen({ route, navigation }) {
     return coincideNombre && coincideCurso;
   });
 
-  //============================================
+  
   //NAVEGACION Y ACCIONES
-  //============================================
-
   const irADetalle = (item) => {
+    // Si toca el lápiz, lo manda a la pantalla de edición, pasándole el objeto completo del registro como parámetro.
     if (type === 'alumnado') navigation.navigate('StudentDetail', { student: item });
     else navigation.navigate('TeacherDetail', { teacher: item });
   };
 
   const confirmarEliminacion = (item) => {
     const mensaje = `¿Estás seguro de eliminar a ${item.name}?`;
-    if (Platform.OS === 'web') {
+    if (Platform.OS === 'web') {// Uso de la API síncrona del navegador.
       if (window.confirm(mensaje)) ejecutarBorrado(item.id);
     } else {
-      Alert.alert('Eliminar', mensaje, [
+      Alert.alert('Eliminar', mensaje, [// Uso de la API asíncrona de alertas nativas de iOS/Android
         { text: 'Cancelar', style: 'cancel' },
         { text: 'Eliminar', style: 'destructive', onPress: () => ejecutarBorrado(item.id) }
       ]);
@@ -204,16 +185,14 @@ export default function ListScreen({ route, navigation }) {
     }
   };
 
-  //============================================
   //RENDER DE CADA FILA
-  //============================================
-
   const renderItem = ({ item }) => {
     const cursoTexto = getNombreCurso(item.school_year);
 
     return (
       <View style={styles.card}>
         <View style={styles.cardContent}>
+          {/* FOTO DE PERFIL */}
           <View style={styles.avatarMini}>
             {item.photo && item.photo !== false ? (
               <Image source={{ uri: `data:image/png;base64,${item.photo}` }} style={styles.avatarImage} />
@@ -221,7 +200,7 @@ export default function ListScreen({ route, navigation }) {
               <Ionicons name="person" size={20} color="#94A3B8" />
             )}
           </View>
-
+            {/* INFORMACIÓN Y BOTONES */}
           <View style={{ flex: 1 }}>
             <View style={styles.cardHeader}>
               <Text style={styles.name}>{item.name} {item.surname || ''}</Text>
@@ -261,12 +240,14 @@ export default function ListScreen({ route, navigation }) {
       </View>
     );
   };
-
+// RENDERIZADO RAÍZ DE LA PANTALLA
   return (
     <View style={styles.container}>
+      {/* 1. SECCIÓN DE CABECERA Y FILTROS */}
       <View style={styles.filtrosContenedor}>
 
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          {/* Buscador de texto */}
           <View style={[styles.buscadorInputWrapper, { flex: 1 }]}>
             <Ionicons name="search" size={20} color="#9CA3AF" style={{ marginRight: 8 }} />
             <TextInput
@@ -277,7 +258,7 @@ export default function ListScreen({ route, navigation }) {
               onChangeText={setBusqueda}
             />
           </View>
-
+          {/* Botón de importación CSV */}
           <TouchableOpacity
             style={[styles.btnCSV, importing && { opacity: 0.6 }]}
             onPress={seleccionarCSV}

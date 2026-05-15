@@ -16,8 +16,6 @@ import { Ionicons, FontAwesome5, Feather } from '@expo/vector-icons';
 import { API_ENDPOINTS } from '../../config/api';
 import { apiClient } from '../../services/apiClient';
 
-//Mapeo de codigo corto de curso -> texto legible para el usuario.
-//Esto se hace en el frontend porque el backend devuelve los datos crudos de Odoo.
 const MAPA_CURSOS = {
   '1ESO': '1º ESO',
   '2ESO': '2º ESO',
@@ -33,7 +31,6 @@ const MAPA_CURSOS = {
   '2CFGS_GFMN': '2º CFGS Gestión Forestal y del Medio Natural'
 };
 
-//Valor especial para el filtro cuando no hay filtro aplicado
 const FILTRO_TODOS = '__TODOS__';
 
 export default function StudentsListScreen({ navigation, route }) {
@@ -67,8 +64,7 @@ export default function StudentsListScreen({ navigation, route }) {
     });
   }, [navigation, route.params]);
 
-  //Carga de alumnos desde el backend. Se extrae como funcion separada (con useCallback)
-  //para poder reutilizarla desde el boton de refresco y el pull-to-refresh.
+
   const cargarAlumnos = useCallback(async (esRefresco = false) => {
     try {
       if (esRefresco) {
@@ -101,8 +97,7 @@ export default function StudentsListScreen({ navigation, route }) {
     cargarAlumnos(false);
   }, [cargarAlumnos]);
 
-  //Lista de cursos disponibles para el desplegable (dinamica: solo los que tienen alumnos).
-  //Calculada en cada render porque es barato y siempre refleja los datos actuales.
+  //Lista de cursos disponibles para el desplegable 
   const cursosDisponibles = (() => {
     const codigos = new Set();
     listaAlumnos.forEach(a => {
@@ -135,8 +130,6 @@ export default function StudentsListScreen({ navigation, route }) {
     setModalDetalleVisible(true);
   };
 
-  //Navega al scanner pasando el alumno. Se usa tanto desde la fila como desde el boton Validar del modal.
-  //Reutilizamos la logica de validacion del ScannerScreen para no duplicarla.
   const validarAlumno = (item) => {
     setModalDetalleVisible(false);
     navigation.navigate('Escáner', {
@@ -183,7 +176,6 @@ export default function StudentsListScreen({ navigation, route }) {
         />
       </View>
 
-      {/*Boton del ojo: abre el modal con todos los datos del alumno*/}
       <TouchableOpacity
         style={styles.btnOjo}
         onPress={() => verDetalleAlumno(item)}
@@ -194,7 +186,6 @@ export default function StudentsListScreen({ navigation, route }) {
     </View>
   );
 
-  //Pantalla de carga inicial (no aparece en pull-to-refresh, solo la primera vez)
   if (cargandoAlumnos && !refrescando) {
     return (
       <View style={styles.centrado}>
@@ -206,7 +197,6 @@ export default function StudentsListScreen({ navigation, route }) {
   return (
     <View style={styles.container}>
 
-      {/*Fila superior: buscador + boton de filtro por curso + boton de refrescar*/}
       <View style={styles.barraSuperior}>
         <View style={styles.buscadorContenedor}>
           <Ionicons name="search" size={20} color="#9CA3AF" style={{ marginRight: 8 }} />
@@ -219,7 +209,6 @@ export default function StudentsListScreen({ navigation, route }) {
           />
         </View>
 
-        {/*Boton de refrescar la lista manualmente*/}
         <TouchableOpacity
           style={styles.btnRefrescar}
           onPress={() => cargarAlumnos(true)}
@@ -233,7 +222,6 @@ export default function StudentsListScreen({ navigation, route }) {
         </TouchableOpacity>
       </View>
 
-      {/*Boton del filtro por curso: abre el modal de seleccion*/}
       <TouchableOpacity
         style={styles.filtroCurso}
         onPress={() => setMostrarFiltroCursos(true)}
@@ -246,7 +234,6 @@ export default function StudentsListScreen({ navigation, route }) {
         <Feather name="chevron-down" size={18} color="#2563EB" />
       </TouchableOpacity>
 
-      {/*Lista de alumnos con pull-to-refresh*/}
       <FlatList
         data={alumnosFiltrados}
         keyExtractor={(item) => (item.id || Math.random()).toString()}
@@ -269,7 +256,6 @@ export default function StudentsListScreen({ navigation, route }) {
         }
       />
 
-      {/*Modal de seleccion de curso para el filtro*/}
       <Modal
         animationType="fade"
         transparent
@@ -285,7 +271,6 @@ export default function StudentsListScreen({ navigation, route }) {
             <Text style={styles.modalFiltroTitulo}>Filtrar por curso</Text>
             <ScrollView style={{ maxHeight: 400 }}>
 
-              {/*Opcion "Todos" siempre visible al principio*/}
               <TouchableOpacity
                 style={[
                   styles.opcionCurso,
@@ -307,7 +292,6 @@ export default function StudentsListScreen({ navigation, route }) {
                 )}
               </TouchableOpacity>
 
-              {/*Resto de cursos disponibles*/}
               {cursosDisponibles.map(c => (
                 <TouchableOpacity
                   key={c.codigo}
@@ -336,7 +320,6 @@ export default function StudentsListScreen({ navigation, route }) {
         </TouchableOpacity>
       </Modal>
 
-      {/*Modal de detalles del alumno con boton Validar*/}
       <Modal
         animationType="fade"
         transparent
@@ -391,9 +374,6 @@ export default function StudentsListScreen({ navigation, route }) {
                   valor={alumnoSeleccionado.uid || 'Sin vincular'}
                   color={alumnoSeleccionado.uid ? '#111827' : '#EF4444'}
                 />
-
-                {/*Boton Validar: navega al scanner igual que cuando se toca la fila desde la version antigua,
-                   o igual que cuando se acerca una tarjeta NFC*/}
                 <TouchableOpacity
                   style={styles.btnValidar}
                   onPress={() => validarAlumno(alumnoSeleccionado)}
@@ -411,8 +391,6 @@ export default function StudentsListScreen({ navigation, route }) {
   );
 }
 
-//Componente auxiliar para las filas etiqueta-valor del modal de detalle.
-//Lo extraigo aparte para no repetir el JSX cinco veces.
 function FilaDato({ etiqueta, valor, color }) {
   return (
     <View style={styles.modalFilaDato}>
@@ -455,7 +433,6 @@ const styles = StyleSheet.create({
     marginLeft: 4,
   },
 
-  //Fila superior: buscador + boton refrescar
   barraSuperior: {
     flexDirection: 'row',
     alignItems: 'center',
