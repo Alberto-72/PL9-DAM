@@ -1,24 +1,13 @@
+// Importacion de modulos
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import {
-  View,
-  Text,
-  FlatList,
-  StyleSheet,
-  ActivityIndicator,
-  TouchableOpacity,
-  Platform,
-  Linking,
-  Image,
-  Modal,
-  ScrollView,
-  Alert,
-  TextInput,
-} from 'react-native';
+import {  View,  Text,  FlatList,  StyleSheet,  ActivityIndicator,  TouchableOpacity,
+  Platform,  Linking,  Image,  Modal,  ScrollView,  Alert,  TextInput,} from 'react-native';
 import { Feather, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { API_ENDPOINTS, API_BASE_URL } from '../../config/api';
 import { apiClient } from '../../services/apiClient';
 import { FILTRO_TODOS, getNombreCurso } from '../../config/cursos';
 
+// Definicion de constantes globales y diccionarios de la ui
 const PAGE_SIZE = 50;
 
 const ETIQUETAS_REG_TYPE = {
@@ -51,7 +40,7 @@ const COLORES_REG_TYPE = {
   error:                        { bg: '#FEE2E2', fg: '#B91C1C' },
 };
 
-function formatearHora(dateTime) {
+function formatearHora(dateTime) { // Extraccion de hora y minuto
   if (!dateTime) return '';
   const fechaUTC = new Date(String(dateTime).replace(' ', 'T') + 'Z');
   if (isNaN(fechaUTC.getTime())) return '';
@@ -60,7 +49,7 @@ function formatearHora(dateTime) {
   return `${hh}:${mm}`;
 }
 
-function fechaHoy() {
+function fechaHoy() { // extraccion del dia de hoy con formato yyyy-mm-dd
   const hoy = new Date();
   const y = hoy.getFullYear();
   const m = String(hoy.getMonth() + 1).padStart(2, '0');
@@ -68,13 +57,14 @@ function fechaHoy() {
   return `${y}-${m}-${d}`;
 }
 
-function formatearFechaParaApp(yyyymmdd) {
+function formatearFechaParaApp(yyyymmdd) { // da vuelta a formato de fecha para el front
   if (!yyyymmdd) return '';
   const [y, m, d] = yyyymmdd.split('-');
   return `${d}/${m}/${y}`;
 }
 
 export default function DashboardScreen() {
+  // Estados de los graficos y metricas
   const [loadingKpis, setLoadingKpis] = useState(true);
   const [kpis, setKpis] = useState({
     asistenciaHoy: 0,
@@ -97,7 +87,7 @@ export default function DashboardScreen() {
   const [seleccionandoSemana2, setSeleccionandoSemana2] = useState(false);
 
   const [tooltip, setTooltip] = useState(null);
-
+  // Estados de la tabla de registros y filtros
   const [tipoActivo, setTipoActivo] = useState('entrada');
   const [fecha, setFecha] = useState(fechaHoy());
   const [cursoFiltro, setCursoFiltro] = useState(FILTRO_TODOS);
@@ -116,8 +106,7 @@ export default function DashboardScreen() {
   const cargandoRef = useRef({ entrada: false, salida: false });
   const fetchTokenRef = useRef(0);
 
-  //Calcula el rango de fechas de la semana de "fechaReferencia" para mostrar
-  //una etiqueta tipo "L 12 may - V 16 may" al usuario.
+  // Saca el lunes y vierens de cualequier dia dado y lo formatea en "dd mmm - dd mmm"
   const calcularLabelSemana = (fechaReferencia) => {
     if (!fechaReferencia) return '';
     const ref = new Date(fechaReferencia + 'T00:00:00Z');
@@ -132,22 +121,20 @@ export default function DashboardScreen() {
     return `${f(lunes)} - ${f(viernes)}`;
   };
 
-  const cargarKpis = useCallback(async () => {
+  const cargarKpis = useCallback(async () => { // coge todos los kpis y datos del gradico
     try {
-      //Construimos URL con parametros opcionales de semana y semana2
       const params = new URLSearchParams();
+      // inyectamos las fechas solicitadas
       if (semanaChart) params.append('semana', semanaChart);
       if (semanaChart2) params.append('semana2', semanaChart2);
       const url = `${API_ENDPOINTS.DASHBOARD}?${params.toString()}`;
       const data = await apiClient.get(url);
       if (data.success) {
         setKpis(data.kpis);
-        //Nueva estructura: semana = { lunes, viernes, chartData }
         const sem = data.semana || { chartData: data.chartData || [] };
         setChartData(sem.chartData || []);
         setSemanaLabel(calcularLabelSemana(sem.lunes || semanaChart));
-        //Semana de comparacion
-        if (data.semana2) {
+        if (data.semana2) { // Si hay una segunda semana la añade
           setChartData2(data.semana2.chartData || []);
           setSemanaLabel2(calcularLabelSemana(data.semana2.lunes || semanaChart2));
         } else {
@@ -162,17 +149,18 @@ export default function DashboardScreen() {
     }
   }, [semanaChart, semanaChart2]);
 
-  useEffect(() => {
+  useEffect(() => {// Carga kpis iniciales
     cargarKpis();
   }, [cargarKpis]);
 
-  useEffect(() => {
+  useEffect(() => { // Escucha variable buscar cada vez que se teclea y espera 300ms antes de guardarlo
     const timer = setTimeout(() => {
       setBuscarDebounced(buscar.trim());
     }, 300);
     return () => clearTimeout(timer);
   }, [buscar]);
 
+  // Carga registros y recibe que pestaña cargar
   const cargarRegistros = useCallback(async (tipo, reset = false) => {
     if (cargandoRef.current[tipo]) return;
 
@@ -240,17 +228,14 @@ export default function DashboardScreen() {
     cargarRegistros('salida', true);
   }, [fecha, cursoFiltro, usrTypeFiltro, buscarDebounced]);
 
-  //Cambio de tab: si la tabla nueva esta vacia (porque no se cargo todavia),
-  //la cargamos. En la practica con el cambio anterior ya estan ambas cargadas,
-  //pero dejamos esto como seguro.
-  useEffect(() => {
+
+  useEffect(() => { // lazy load si el usario cambia la pestaña y esta vacia la pide
     if (registros[tipoActivo].length === 0 && !cargandoRef.current[tipoActivo]) {
       cargarRegistros(tipoActivo, true);
     }
-    //eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tipoActivo]);
 
-  const cargarSiguientePagina = useCallback(() => {
+  const cargarSiguientePagina = useCallback(() => { // funcion para sacar mas registros si los hay sino para
     const enPantalla = registros[tipoActivo].length;
     const total = totales[tipoActivo];
     if (cargandoRef.current[tipoActivo]) return;
@@ -266,12 +251,7 @@ export default function DashboardScreen() {
     cargarKpisRef.current = cargarKpis;
   }, [cargarRegistros, cargarKpis]);
 
-  useEffect(() => {
-    //Auto-refresh cada 10 segundos.
-    //IMPORTANTE: refrescamos AMBOS tabs (entrada y salida) en cada tick, no solo
-    //el activo. Asi los contadores de las pestañas se mantienen al dia aunque el
-    //usuario no las abra. Es un trade-off: dobla las peticiones a Odoo, pero
-    //evita el efecto de "tab inactivo se queda en 0".
+  useEffect(() => { // Cada 10 segundos se recarga 
     const id = setInterval(() => {
       cargarKpisRef.current();
       cargarRegistrosRef.current('entrada', true);
@@ -280,14 +260,13 @@ export default function DashboardScreen() {
     return () => clearInterval(id);
   }, []);
 
-  //Refresco manual al pulsar el boton: igual que el auto-refresh, ambos tabs
-  const refrescarManual = useCallback(() => {
+  const refrescarManual = useCallback(() => { // refrescar los datos de manera manual
     cargarKpisRef.current();
     cargarRegistrosRef.current('entrada', true);
     cargarRegistrosRef.current('salida', true);
   }, []);
 
-  const handleExportar = () => {
+  const handleExportar = () => {  // Utilidad de exportación de CSV
     const url = API_ENDPOINTS.EXPORTAR_ACCESOS;
     if (Platform.OS === 'web') window.open(url, '_blank');
     else Linking.openURL(url).catch(err => console.error('Error al abrir URL:', err.message));
@@ -296,13 +275,9 @@ export default function DashboardScreen() {
   //Abre el modal de seleccion de fecha (web + movil unificado)
   const cambiarFecha = () => setMostrarSelectorFecha(true);
 
-  //Tooltip al pasar el raton (solo web).
-  //Recibe el id unico del segmento (string), su valor*5, la etiqueta del segmento
-  //(ej "Puntuales") y el tipo ('entrada' o 'salida').
-  //Mostramos el conteo real (value / 5) junto con la etiqueta especifica de ese
-  //segmento. Si el conteo es 0, no mostramos tooltip.
-  const handleMouseEnter = (segId, rawValue, segLabel, tipo) => {
-      if (Platform.OS === 'web') {
+    //Tooltips
+  const handleMouseEnter = (segId, rawValue, segLabel, tipo) => { // ver cuando entra el raton
+      if (Platform.OS === 'web') { // se ve en que plataforma esta 
           const count = rawValue / 5;
           if (count === 0) return;
           //Texto del tooltip: "5 Puntuales (entradas)" o "3 Anticipadas (salidas)"
@@ -313,21 +288,12 @@ export default function DashboardScreen() {
       }
   };
 
-  const handleMouseLeave = () => {
+  const handleMouseLeave = () => { // ver cuando sale
       if (Platform.OS === 'web') {
           setTooltip(null);
       }
   };
-
-  //Helper que renderiza el grafico de barras semanal (5 dias x 2 mini-barras).
-  //
-  //chartArr: array de 5 dias con .day, .entrada.segments, .salida.segments
-  //prefijo:  string distintivo para los segIds del tooltip (evita colisiones
-  //          cuando hay 2 graficos: 'main' y 'comp')
-  //
-  //IMPORTANTE: el tooltip se renderiza FUERA del segmento (a nivel del
-  //barWrapper) para que no se recorte por el overflow:'hidden' del miniBar.
-  //Lo posicionamos con left:50% + transform:translateX(-50%) sobre la columna.
+  // Dibuja desde cero el gráfico de barras apilado mediante CSS Flexbox.
   const renderBarras = (chartArr, prefijo) => (
     <View style={styles.chartContainer}>
       {chartArr.map((item, dIndex) => {
@@ -361,11 +327,7 @@ export default function DashboardScreen() {
                 </View>
               ))}
             </View>
-            {/*
-              Tooltip a nivel del barWrapper (no del segmento) para evitar
-              que el overflow:'hidden' del miniBarBackground lo recorte.
-              Solo se monta cuando la columna tiene el segmento hovereado.
-            */}
+      {/* Si es web y estamos hovereando la columna, pinta la cajita negra encima de la barra */}
             {hoveredEnEstaColumna && (
               <View style={styles.tooltipContainerFix}>
                 <View style={styles.tooltipBox}>
@@ -374,13 +336,14 @@ export default function DashboardScreen() {
                 <View style={styles.tooltipArrow} />
               </View>
             )}
+            {/* Etiqueta del día debajo de las columnas (ej. "L", "M") */}
             <Text style={styles.barLabel}>{item.day}</Text>
           </View>
         );
       })}
     </View>
   );
-
+  // Componente que dibuja una fila del historial por persona.
   const renderRegistro = ({ item }) => {
     const color = COLORES_REG_TYPE[item.reg_type] || { bg: '#F1F5F9', fg: '#475569' };
     const etiqueta = ETIQUETAS_REG_TYPE[item.reg_type] || item.reg_type;
@@ -425,7 +388,7 @@ export default function DashboardScreen() {
     );
   };
 
-  const renderHeader = () => (
+  const renderHeader = () => ( // Renderiza toda la parte superior
     <View>
       {loadingKpis ? (
         <View style={{ paddingVertical: 20 }}>
@@ -445,11 +408,6 @@ export default function DashboardScreen() {
             <Feather name="bar-chart-2" size={18} color="#1D4ED8" style={{ marginRight: 8 }} />
             <Text style={styles.cardTitle}>Asistencia semanal</Text>
           </View>
-
-          {/*
-            Cabecera con selector de semana actual + boton comparar / reset.
-            La semana mostrada se etiqueta abajo de cada grafico.
-          */}
           <View style={styles.chartHeader}>
             <TouchableOpacity
               style={styles.chartHeaderBoton}
@@ -480,7 +438,6 @@ export default function DashboardScreen() {
               </TouchableOpacity>
             )}
 
-            {/*Boton de reset: solo si la semana actual no es ya la de hoy*/}
             {semanaChart !== fechaHoy() && (
               <TouchableOpacity
                 style={[styles.chartHeaderBoton, { marginLeft: 8 }]}
@@ -767,12 +724,6 @@ export default function DashboardScreen() {
         </TouchableOpacity>
       </Modal>
 
-      {/*============================================
-         MODAL: Selector de fecha (historial)
-         Da opciones rapidas: hoy, ayer, anteayer, hace una semana, hace un mes.
-         Tambien permite escribir una fecha exacta YYYY-MM-DD.
-         Unificado para web y movil para evitar el prompt() horrendo.
-         ============================================*/}
       <Modal
         animationType="fade"
         transparent
@@ -836,13 +787,6 @@ export default function DashboardScreen() {
         </TouchableOpacity>
       </Modal>
 
-      {/*============================================
-         MODAL: Selector de semana del grafico
-         Cada opcion es una semana relativa: actual, anterior, hace 2 semanas, etc.
-         Calculamos para cada opcion el lunes y mostramos el rango "L 12 may - V 16 may".
-         La opcion elegida se guarda en semanaChart (o semanaChart2 si estamos eligiendo
-         la semana de comparacion: el flag seleccionandoSemana2).
-         ============================================*/}
       <Modal
         animationType="fade"
         transparent
@@ -916,6 +860,7 @@ const LegendItem = ({ color, label }) => (
   </View>
 );
 
+// Estilos 
 const styles = StyleSheet.create({
   content: {
     padding: 16,
@@ -964,9 +909,6 @@ const styles = StyleSheet.create({
     color: '#334155',
   },
 
-  // Chart: cada barWrapper contiene un parBarras con DOS miniBarBackground
-  // pegadas (entrada izquierda, salida derecha). Cada mini-barra tiene segmentos
-  // apilados igual que antes.
   chartContainer: {
     flexDirection: 'row',
     justifyContent: 'space-around',
@@ -997,8 +939,6 @@ const styles = StyleSheet.create({
   barFillSegment: {
     width: '100%',
   },
-  //Tooltip a nivel del barWrapper (no del segmento) para evitar el recorte
-  //por overflow:'hidden' del miniBarBackground. Posicionado encima de las barras.
   tooltipContainerFix: {
     position: 'absolute',
     top: -8,
@@ -1008,7 +948,7 @@ const styles = StyleSheet.create({
     width: 100,
     zIndex: 999,
   },
-  //Cabecera del grafico (selector de semana, comparar, reset)
+
   chartHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1038,9 +978,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 4,
   },
-  //Header que se monta encima de cada grafico cuando hay comparacion activa
-  //para que se vea claro que semana es cual. La principal lleva fondo azul claro
-  //y la de comparacion fondo amarillo claro (mismo codigo que el icono del menu).
   chartSemanaHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1276,8 +1213,6 @@ const styles = StyleSheet.create({
     color: '#475569',
     flexShrink: 1,
   },
-  //Buscador por nombre: campo de texto con icono y boton para limpiar.
-  //Va dentro de la fila de filtros y se adapta al espacio disponible.
   buscadorWrap: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -1,3 +1,4 @@
+// Importacion de componentes
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Feather } from '@expo/vector-icons';
@@ -5,12 +6,13 @@ import { TouchableOpacity, Text, StyleSheet } from 'react-native';
 import ScannerScreen from '../views/teacher/ScannerScreen';
 import StudentsListScreen from '../views/teacher/StudentsListScreen';
 import SettingsScreen from '../views/teacher/SettingsScreen';
-const Tab = createBottomTabNavigator(); 
+const Tab = createBottomTabNavigator(); // Navegador de pantallas
 
 export default function GuardiaStack({ navigation, route }) {
   const esDesdeDirectiva = route.params?.origin === 'directiva';
 
   return (
+    // Contenedor principal de pestañas
     <Tab.Navigator
       screenOptions={{
         headerShown: true,
@@ -29,7 +31,7 @@ export default function GuardiaStack({ navigation, route }) {
         ) : null,
       }}
     >
-      <Tab.Screen 
+      <Tab.Screen  // PESTAÑA DE ESCANER NFC
         name="Escáner" 
         component={ScannerScreen} 
         options={{ 
@@ -38,7 +40,7 @@ export default function GuardiaStack({ navigation, route }) {
           tabBarIcon: ({color}) => <Feather name="radio" size={20} color={color}/> 
         }} 
       />
-      <Tab.Screen 
+      <Tab.Screen // PESTAÑA DE BUSQUEDA MANUAL
         name="BusquedaManual" 
         component={StudentsListScreen} 
         initialParams={{ origin: route.params?.origin }}
@@ -48,7 +50,7 @@ export default function GuardiaStack({ navigation, route }) {
           tabBarIcon: ({color}) => <Feather name="users" size={20} color={color}/> 
         }} 
       />
-      <Tab.Screen 
+      <Tab.Screen // PESTAÑA DE PERFIL/AJUSTES
         name="MiPerfil" 
         component={SettingsScreen} 
         options={{ 
@@ -60,7 +62,7 @@ export default function GuardiaStack({ navigation, route }) {
     </Tab.Navigator>
   );
 }
-
+// estilos visuales
 const styles = StyleSheet.create({
   btnSalir: { 
     flexDirection: 'row', 

@@ -1,15 +1,6 @@
 import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-  TouchableWithoutFeedback,
-  Keyboard
+import {  View,  Text,  TextInput,  TouchableOpacity,  StyleSheet,
+  ActivityIndicator,  KeyboardAvoidingView,  Platform,  TouchableWithoutFeedback,  Keyboard
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { loginToOdoo } from '../../services/LogInService';
@@ -22,7 +13,8 @@ export default function LoginScreen({ route }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleLogin = async () => {
+  // Función asíncrona que se dispara al pulsar el botón Entrar
+  const handleLogin = async () => { // validacion de que esta introducido
     if (!username.trim() || !password.trim()) {
       setError('Por favor, ingresa tu usuario y contraseña.');
       return;
@@ -32,6 +24,7 @@ export default function LoginScreen({ route }) {
     setError('');
 
     try {
+      // hacemos la peticion a odoo
       const resultado = await loginToOdoo(username, password);
 
       if (resultado.ok) {
@@ -47,7 +40,7 @@ export default function LoginScreen({ route }) {
         return;
       }
 
-      //Login fallido: mostramos un mensaje distinto segun el motivo real
+      //LManejo de Errores
       if (resultado.motivo === 'red') {
         setError('No se puede conectar con el servidor. Comprueba la red.');
       } else if (resultado.motivo === 'credenciales') {
@@ -63,11 +56,12 @@ export default function LoginScreen({ route }) {
     }
   };
 
+  // Adaptacion en base a si es web o movil
   const Wrapper = Platform.OS === 'web' ? View : TouchableWithoutFeedback;
   const wrapperProps = Platform.OS === 'web' ? {} : { onPress: Keyboard.dismiss };
 
   return (
-    <KeyboardAvoidingView
+    <KeyboardAvoidingView // Empuja el contenido hacia arriba cuando esta en movil para cunado salga el teclado
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
@@ -146,7 +140,7 @@ export default function LoginScreen({ route }) {
     </KeyboardAvoidingView>
   );
 }
-
+// Hoja de estilos
 const styles = StyleSheet.create({
   container: {
     flex: 1,

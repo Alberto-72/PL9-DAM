@@ -2,6 +2,7 @@ import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Feather } from '@expo/vector-icons';
 
+//Importacion de los componentes/pantallas
 import DashboardScreen from '../views/directive/DashboardScreen';
 import ListScreen from '../views/directive/ListScreen';
 import NFCBindingScreen from '../views/directive/NFCBindingScreen';
@@ -12,6 +13,8 @@ const Tab = createBottomTabNavigator();
 export default function DirectiveTabs() {
   return (
     <Tab.Navigator
+    // Se define el estilo y comportamiento general para todas las pestañas y recibe una funcion
+    // donde se extrae el objeto route (ruta actual) para la toma de decisiones dinamicas
       screenOptions={({ route }) => ({
         headerShown: true,
         headerStyle: { backgroundColor: '#1D4ED8' },
@@ -26,7 +29,7 @@ export default function DirectiveTabs() {
           else if (route.name === 'Profesores') iconName = 'user';
           else if (route.name === 'NFC') iconName = 'link';
           else if (route.name === 'Control') iconName = 'shield';
-
+          // Devuelve icono configurado
           return <Feather name={iconName} size={size} color={color} />;
         },
       })}

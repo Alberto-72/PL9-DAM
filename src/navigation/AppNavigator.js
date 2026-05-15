@@ -13,15 +13,11 @@ import { AuthProvider } from '../context/AuthContext';
 
 const Stack = createNativeStackNavigator();
 
-//============================================
 //Lectura directa del storage al arrancar
-//
 //AuthProvider tambien lee storage, pero necesitamos saber si hay sesion ANTES
 //de montar el Navigator: en funcion de eso mostramos Login o TeacherApp/DirectiveApp.
 //Por eso lo hacemos tambien aqui.
-//
-//En web: localStorage (sincrono). En movil: AsyncStorage si esta instalado.
-//============================================
+
 let asyncStorage = null;
 try {
   asyncStorage = require('@react-native-async-storage/async-storage').default;
@@ -47,40 +43,45 @@ async function leerSesionGuardada() {
 }
 
 export default function AppNavigator() {
+  // Estados locales para mantener la sesion a nivel de enrutador
   const [userToken, setUserToken] = useState(null);
   const [userRole, setUserRole] = useState(null);
   const [username, setUsername] = useState(null);
+  // Mantiene la pantalla en negro o cargando hasta que se termine de leer la sesion
   const [cargandoSesion, setCargandoSesion] = useState(true);
 
-  //Restaurar sesion al arrancar
+  // Efecto que se ejecuta solo una vez cuando se momnta la aplicacion
   useEffect(() => {
     let cancelado = false;
     (async () => {
       const sesion = await leerSesionGuardada();
       if (cancelado) return;
-      if (sesion) {
+      if (sesion) { // Si encuentra sesion valida actualiza estados
         setUserToken(sesion.token);
         setUserRole(sesion.role);
         setUsername(sesion.username);
       }
+      // Termina prodceso de carga permitiendo que react muestre pantallas
       setCargandoSesion(false);
     })();
     return () => { cancelado = true; };
   }, []);
 
+  // Funcion para inyectar la sesion cuando el uisuario hace login manual
   const handleLogin = useCallback((token, role, username) => {
     setUserToken(token);
     setUserRole(role);
     setUsername(username);
   }, []);
 
+  // Funcion para borrar la sesion de los estados locales
   const handleLogout = useCallback(() => {
     setUserToken(null);
     setUserRole(null);
     setUsername(null);
   }, []);
 
-  //Mostrar splash mientras hidratamos
+  // Pantalla de carga inicial mientras cargando sesion sea true
   if (cargandoSesion) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0f172a' }}>
@@ -89,19 +90,20 @@ export default function AppNavigator() {
     );
   }
 
+  // renderizado del arbol principal de navegacion
   return (
     <NavigationContainer>
+      {/* AuthProvider envuelve las rutas para que cualquier pantalla pueda consumir 'useAuth()' */}  
       <AuthProvider
         username={username}
         role={userRole}
         token={userToken}
         onLogout={handleLogout}
-        //Si el AuthProvider restaura una sesion antes que nosotros (raro pero posible),
-        //le permitimos notificarnos. Por simetria.
         onSessionRestored={handleLogin}
       >
         <Stack.Navigator screenOptions={{ headerShown: false }}>
           {userToken == null ? (
+            // Si no hay token lo unico que puede mostrar es el login
             <Stack.Screen
               name="Login"
               component={LoginScreen}
@@ -109,6 +111,7 @@ export default function AppNavigator() {
             />
           ) : (
             <>
+              {/*Bifurcacion dependiendo del rol de usuario*/}
               {userRole === 'directiva' ? (
                 <Stack.Screen
                   name="DirectiveApp"
@@ -124,7 +127,8 @@ export default function AppNavigator() {
                   key={`teacher-${username || 'no-user'}`}
                 />
               )}
-
+              
+              {/* Pantallas de detalle comunes a ambos roles. Se apilan sobre los Tabs cuando se navega hacia ellas. */}
               <Stack.Screen
                 name="StudentDetail"
                 component={StudentDetailScreen}

@@ -2,6 +2,7 @@ import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Feather } from '@expo/vector-icons';
 
+// Importación de las tres pantallas que van a estar contenidas
 import ScannerScreen from '../views/teacher/ScannerScreen';
 import StudentsListScreen from '../views/teacher/StudentsListScreen';
 import SettingsScreen from '../views/teacher/SettingsScreen';
@@ -12,6 +13,7 @@ export default function TeacherTabs({ route }) {
   const { username } = route.params || {};   // solo username (sin función)
 
   return (
+    // scrrenOpction dicta el comportamiento visual de toda la botonera y las cabeceras
     <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: true,
@@ -20,7 +22,7 @@ export default function TeacherTabs({ route }) {
         headerTitleStyle: { fontWeight: 'bold' },
         tabBarActiveTintColor: '#1D4ED8',
         tabBarInactiveTintColor: '#94A3B8',
-        tabBarIcon: ({ color, size }) => {
+        tabBarIcon: ({ color, size }) => { // Renderizado de los iconos para cada pestaña
           let iconName;
           if (route.name === 'Escáner') iconName = 'radio';
           else if (route.name === 'Alumnos') iconName = 'users';
@@ -29,6 +31,7 @@ export default function TeacherTabs({ route }) {
         },
       })}
     >
+      {/*Definicion de las rutas a las vistas*/}
       <Tab.Screen name="Escáner" component={ScannerScreen} options={{ title: 'Control Guardia' }} />
       <Tab.Screen name="Alumnos" component={StudentsListScreen} options={{ title: 'Búsqueda Manual' }} />
       <Tab.Screen 
@@ -36,7 +39,7 @@ export default function TeacherTabs({ route }) {
         component={SettingsScreen} 
         options={{ title: 'Mi Perfil' }} 
         initialParams={{ username }} 
-        key={`ajustes-${username || 'no-user'}`}
+        key={`ajustes-${username || 'no-user'}`} // Esto obliga a react a destruir por completo la instancia vieja
       />
     </Tab.Navigator>
   );

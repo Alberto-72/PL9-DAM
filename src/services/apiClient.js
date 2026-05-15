@@ -1,6 +1,6 @@
-//api client: modulo centralizado para hacer peticiones a la API REST del backend.
-//Aqui se maneja el timeout, los errores de red, el parseo de JSON, etc.
-//El resto del frontend solo llama a apiClient.get/post/put/delete con la URL y los datos.
+// modulo centralizado para hacer peticiones a la API REST del backend.
+// Aqui se maneja el timeout, los errores de red, el parseo de JSON, etc.
+// El resto del frontend solo llama a apiClient.get/post/put/delete con la URL y los datos.
 
 import { API_TIMEOUT } from '../config/api';
 

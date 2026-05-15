@@ -1,20 +1,3 @@
-//Lista unica de cursos del centro. Es la unica fuente de verdad para todos los
-//modulos que necesiten mostrar el nombre legible de un curso o validar codigos.
-//
-//Modulos que la consumen actualmente:
-//- src/views/directive/ListScreen.js (filtro de cursos en panel directiva)
-//- src/views/teacher/StudentsListScreen.js (filtro de cursos en busqueda manual)
-//- server.js (backend, para /api/verificar-tarjeta)
-//
-//Si anades un curso nuevo, anadelo aqui y se reflejara en toda la aplicacion.
-//Si el curso aparece en Odoo pero no esta aqui, los filtros lo mostraran con
-//su codigo corto en lugar del nombre largo (comportamiento fallback seguro).
-//
-//Compatibilidad: este archivo usa module.exports (CommonJS) para que pueda ser
-//consumido tanto por el server.js (Node) como por React Native (Metro/Babel
-//traduce los import a require internamente, asi que funciona en ambos lados).
-
-//Mapeo codigo corto -> nombre completo del curso
 const MAPA_CURSOS = {
   '1ESO':         '1 Educacion Secundaria Obligatoria',
   '2ESO':         '2 Educacion Secundaria Obligatoria',
@@ -38,23 +21,15 @@ const MAPA_CURSOS = {
   '2CFGS_GFMN':   '2 CFGS Gestion Forestal y del Medio Natural',
 };
 
-//Lista ordenada de cursos para iterar en el orden definido aqui (no por orden
-//alfabetico de claves, que dejaria 1BACH_CIEN antes de 1CFGB_AGR de forma rara).
-//Object.entries respeta el orden de insercion en JS moderno, asi que esto coincide
-//con el orden visual deseado: ESO, Bachillerato, CFGB, CFGM, CFGS.
+
 const LISTA_CURSOS = Object.entries(MAPA_CURSOS).map(([codigo, etiqueta]) => ({
   codigo,
   etiqueta,
 }));
 
-//Valor especial para el filtro cuando no hay filtro aplicado.
-//Lo centralizamos aqui para que ListScreen y StudentsListScreen usen el mismo
-//valor sin riesgo de typos.
+
 const FILTRO_TODOS = '__TODOS__';
 
-//Helper: devuelve el nombre largo de un curso a partir de su codigo.
-//Fallback seguro: si el codigo no existe en el mapa, devuelve el propio codigo
-//(para que la UI muestre algo aunque sea raro, en lugar de undefined o vacio).
 function getNombreCurso(codigo) {
   if (!codigo || codigo === false) return 'Sin curso';
   return MAPA_CURSOS[codigo] || codigo;

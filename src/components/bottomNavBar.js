@@ -1,4 +1,4 @@
-return (
+return ( // Componente de la barra de navegacion inferior
     <SafeAreaView style={styles.container}>
       <StatusBar style="light" backgroundColor="#2563EB" />
 

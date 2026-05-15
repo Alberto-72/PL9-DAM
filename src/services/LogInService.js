@@ -1,59 +1,41 @@
 //Servicio de login y carga de datos de Odoo desde el backend Node.
-//Todas las llamadas pasan por apiClient para tener timeout y manejo de errores unificado.
-//Las URLs estan centralizadas en config/api.js para no tener IPs hardcodeadas.
-
 import { API_ENDPOINTS } from '../config/api';
 import { apiClient } from './apiClient';
 
-//Login contra el backend.
-//Devuelve un objeto con el resultado:
-//  { ok: true, usuario }                          -> login correcto
-//  { ok: false, motivo: 'credenciales' }          -> usuario o contraseña incorrectos
-//  { ok: false, motivo: 'red', mensaje }          -> no se pudo contactar con el servidor
-//  { ok: false, motivo: 'error', mensaje }        -> otro error
-//
-//Antes esta funcion devolvia null para cualquier fallo, lo que hacia imposible
-//distinguir un error de red de una contraseña incorrecta. Ahora el motivo es
-//explicito para que la pantalla de login muestre un mensaje correcto.
+// función asíncrona encargada de manejar el proceso de inicio de sesión.
 export const loginToOdoo = async (username, password) => {
   try {
+    // Realiza una petición POST al endpoint de login enviando las credenciales en el cuerpo (JSON).
     const data = await apiClient.post(API_ENDPOINTS.LOGIN, { username, password });
 
     if (data && data.success) {
+      // si login correcto
       return { ok: true, usuario: data.usuario };
     }
-
+    // si login falla
     return { ok: false, motivo: 'credenciales', mensaje: data?.message || 'Usuario o contraseña no válidos' };
   } catch (error) {
-    if (error.isNetworkError || error.isTimeout) {
+    if (error.isNetworkError || error.isTimeout) { // si error de red
       return { ok: false, motivo: 'red', mensaje: error.message };
     }
     return { ok: false, motivo: 'error', mensaje: error.message || 'Error desconocido' };
   }
 };
-
-//Carga el listado de alumnos o profesores segun el modelo de Odoo solicitado.
-//
-//Uso:
-//  const alumnos = await fetchOdooData('gestion_entrada.alumno');
-//  const profes  = await fetchOdooData('gestion_entrada.profesor');
-//
-//Devuelve un array (vacio si hay error o no hay datos). Los campos vienen crudos de Odoo.
+// función asíncrona encargada de descargar el listado de alumnos o profesores.
 export const fetchOdooData = async (model) => {
   try {
-    //Elegimos endpoint segun el modelo, ambos centralizados en config/api.js
     const endpoint = model === 'gestion_entrada.alumno'
       ? API_ENDPOINTS.ALUMNOS
       : API_ENDPOINTS.PROFESORES;
 
+      // hace la peticion al endpoint
     const data = await apiClient.get(endpoint);
-
+    // Manejo de errores
     if (!data.success) {
       console.warn(`fetchOdooData(${model}) -> success=false`);
       return [];
     }
 
-    //La respuesta varia segun el modelo: { alumnos: [...] } o { profesores: [...] }
     if (model === 'gestion_entrada.alumno') {
       return data.alumnos || [];
     }

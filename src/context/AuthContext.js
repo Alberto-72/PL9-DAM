@@ -1,21 +1,10 @@
+// Persistencia de sesion en base a la plataforma donde se ejecute
+
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { Platform } from 'react-native';
 
-//============================================
-//STORAGE ADAPTER: persistencia compatible movil + web
-//
-//En web usamos localStorage (sincrono, siempre disponible).
-//En movil intentamos cargar @react-native-async-storage/async-storage.
-//Si la libreria no esta instalada, degrada con un no-op: el login funcionara
-//pero NO se recordara entre arranques. La app NO se rompe.
-//
-//Para que funcione en movil hay que instalar:
-//   npx expo install @react-native-async-storage/async-storage
-//============================================
 let asyncStorage = null;
-try {
-  //require dinamico: si el modulo no existe, no peta
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
+try { // Importamos AsyncStorage dinamicamente si falla significa que esta en web
   asyncStorage = require('@react-native-async-storage/async-storage').default;
 } catch (e) {
   if (Platform.OS !== 'web') {
@@ -57,11 +46,11 @@ const storage = {
   }
 };
 
-const STORAGE_KEY = 'controlAcceso.session';
+const STORAGE_KEY = 'controlAcceso.session'; // Clave bajo la que se guarda el json de la sesion en la memoria
 
-const AuthContext = createContext();
+const AuthContext = createContext(); // Contexto para no tener que pasarlo como props entre padres e hijos
 
-export const useAuth = () => {
+export const useAuth = () => { // Hook para consumir el contexto
   const context = useContext(AuthContext);
   if (!context) {
     throw new Error('useAuth debe usarse dentro de un AuthProvider');
@@ -118,7 +107,6 @@ export const AuthProvider = ({
       }
     })();
     return () => { cancelado = true; };
-    //eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   //Guardar sesion cuando cambien las credenciales (despues de login normal)
