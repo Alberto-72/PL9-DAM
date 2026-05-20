@@ -275,7 +275,7 @@ app.get('/api/alumnos', async (req, res) => { // Busca listado completo de alumn
             'gestion_entrada.alumno',
             'search_read',
             [[]],
-            { fields: ['uid', 'name', 'surname', 'nif', 'photo', 'school_year', 'birth_date', 'can_bus', 'email'] }
+            { fields: ['uid', 'name', 'surname', 'photo', 'school_year', 'birth_date', 'can_bus', 'email'] }
         );
         console.log(`Total alumnos encontrados: ${result ? result.length : 0}`);
         return res.json({ success: true, alumnos: result || [] });
@@ -285,13 +285,13 @@ app.get('/api/alumnos', async (req, res) => { // Busca listado completo de alumn
 });
 
 app.post('/api/alumnos', async (req, res) => { // Creacion de un aluimno nuevo
-    const { name, surname, nif, email, birth_date, school_year, can_bus, photo, uid } = req.body; // Extrae campos
-    if (!name || !surname || !nif || !email || !birth_date) { // Datos obligatorios
-        return sendError(res, 400, 'Faltan campos obligatorios (name, surname, nif, email, birth_date)');
+    const { name, surname, email, birth_date, school_year, can_bus, photo, uid } = req.body; // Extrae campos
+    if (!name || !surname || !email || !birth_date) { // Datos obligatorios
+        return sendError(res, 400, 'Faltan campos obligatorios (name, surname, email, birth_date)');
     }
 
     try { // En el caso de que hayan datos que no existan los asigna
-        const values = { name, surname, nif, email, birth_date };
+        const values = { name, surname, email, birth_date };
         if (school_year !== undefined) values.school_year = school_year;
         if (can_bus !== undefined) values.can_bus = can_bus;
         if (photo !== undefined) values.photo = photo;
@@ -310,7 +310,7 @@ app.put('/api/alumnos/:id', async (req, res) => { // Actualizacion de alumnos
     if (isNaN(id)) return sendError(res, 400, 'ID invalido');
 
     try {
-        const allowed = ['name', 'surname', 'nif', 'email', 'birth_date', 'school_year', 'can_bus', 'photo', 'uid'];
+        const allowed = ['name', 'surname', 'email', 'birth_date', 'school_year', 'can_bus', 'photo', 'uid'];
         const values = {};
         for (const k of allowed) { // Comprobacion de los campos a ver si hay que hacer actualizaciones realmente
             if (req.body[k] !== undefined) values[k] = req.body[k];
@@ -348,7 +348,7 @@ app.get('/api/profesores', async (req, res) => { // Consulta para sacar el lista
             'gestion_entrada.profesor',
             'search_read',
             [[]],
-            { fields: ['uid', 'name', 'surname', 'nif', 'email', 'photo', 'is_management', 'username', 'birth_date'] }
+            { fields: ['uid', 'name', 'surname', 'email', 'photo', 'is_management', 'username', 'birth_date'] }
         );
         console.log(`Total profesores encontrados: ${result ? result.length : 0}`);
         return res.json({ success: true, profesores: result || [] });
@@ -358,16 +358,16 @@ app.get('/api/profesores', async (req, res) => { // Consulta para sacar el lista
 });
 
 app.post('/api/profesores', async (req, res) => { // Creacion de profesores
-    const { name, surname, nif, email, birth_date, username, user_pass, photo, uid, is_management } = req.body;
-    if (!name || !surname || !nif || !email || !birth_date || !username || !user_pass) { // Comprobacion de los require
-        return sendError(res, 400, 'Faltan campos obligatorios (name, surname, nif, email, birth_date, username, user_pass)');
+    const { name, surname, email, birth_date, username, user_pass, photo, uid, is_management } = req.body;
+    if (!name || !surname || !email || !birth_date || !username || !user_pass) { // Comprobacion de los require
+        return sendError(res, 400, 'Faltan campos obligatorios (name, surname, email, birth_date, username, user_pass)');
     }
 
     try {
         const hashedPassword = await bcrypt.hash(user_pass, 10); // Se coge la contraseña intruducida manualmente o por importacion y se hashea
 
         const values = { // Se formatean los valores y para las importaciones se pone por defecto que es falso
-            name, surname, nif, email, birth_date, username, 
+            name, surname, email, birth_date, username, 
             user_pass: hashedPassword, 
             is_management: is_management === undefined ? false : !!is_management, // Si no existe false, por otro lado fuerza a que el dato sea un booleano
         };
@@ -387,7 +387,7 @@ app.put('/api/profesores/:id', async (req, res) => { // Actualizacion de los dat
     if (isNaN(id)) return sendError(res, 400, 'ID invalido');
 
     try {
-        const allowed = ['name', 'surname', 'nif', 'email', 'username', 'birth_date', 'photo', 'user_pass', 'uid', 'is_management'];
+        const allowed = ['name', 'surname', 'email', 'username', 'birth_date', 'photo', 'user_pass', 'uid', 'is_management'];
         const values = {};
         
         for (const k of allowed) {
@@ -682,7 +682,6 @@ app.post('/api/importar-csv/:tipo', upload.single('archivo'), async (req, res) =
             const nombre = leerCampo(fila, 'Nombre');
             const apellido1 = leerCampo(fila, 'Primer Apellido');
             const apellido2 = leerCampo(fila, 'Segundo Apellido');
-            const nif = leerCampo(fila, 'N.I.F./N.I.E.', 'NIF', 'Nif - Nie');
             const alias = leerCampo(fila, 'Alias');
             const email = leerCampo(fila, 'email', 'Email');
             const fechaCruda = leerCampo(fila, 'Fecha de Nacimiento', 'Fecha de nacimiento');
@@ -694,7 +693,6 @@ app.post('/api/importar-csv/:tipo', upload.single('archivo'), async (req, res) =
             infoPersona = { nombre, apellidos, extra: alias };
 
             values = {
-                nif,
                 name: nombre,
                 surname: apellidos,
                 username: alias,
@@ -704,9 +702,9 @@ app.post('/api/importar-csv/:tipo', upload.single('archivo'), async (req, res) =
             };
             if (fecha) values.birth_date = fecha;
 
-            if (!nombre || !apellido1 || !nif || !alias || !email) {
+            if (!nombre || !apellido1 || !alias || !email) {
                 errores++;
-                const motivo = 'faltan datos obligatorios (nombre, apellido, nif, alias o email)';
+                const motivo = 'faltan datos obligatorios (nombre, apellido, alias o email)';
                 detallesErrores.push(`Fila ${numeroFila}: ${motivo}`);
                 fallidosLista.push({ ...infoPersona, motivo });
                 continue;
@@ -722,7 +720,6 @@ app.post('/api/importar-csv/:tipo', upload.single('archivo'), async (req, res) =
             const nombre = leerCampo(fila, 'Nombre');
             const apellido1 = leerCampo(fila, 'Primer apellido', 'Primer Apellido');
             const apellido2 = leerCampo(fila, 'Segundo apellido', 'Segundo Apellido');
-            const nif = leerCampo(fila, 'Nif - Nie', 'N.I.F./N.I.E.', 'NIF');
             const email = leerCampo(fila, 'email', 'Email');
             const fechaCruda = leerCampo(fila, 'Fecha de nacimiento', 'Fecha de Nacimiento');
             const cursoCrudo = leerCampo(fila, 'Curso');
@@ -734,7 +731,6 @@ app.post('/api/importar-csv/:tipo', upload.single('archivo'), async (req, res) =
             infoPersona = { nombre, apellidos, extra: getCursoCompleto(codigoCurso) || cursoCrudo };
 
             values = {
-                nif,
                 name: nombre,
                 surname: apellidos,
                 email,
@@ -743,9 +739,9 @@ app.post('/api/importar-csv/:tipo', upload.single('archivo'), async (req, res) =
             if (fecha) values.birth_date = fecha;
             if (codigoCurso) values.school_year = codigoCurso;
 
-            if (!nombre || !apellido1 || !nif || !email) {
+            if (!nombre || !apellido1 || !email) {
                 errores++;
-                const motivo = 'faltan datos obligatorios (nombre, apellido, nif o email)';
+                const motivo = 'faltan datos obligatorios (nombre, apellido o email)';
                 detallesErrores.push(`Fila ${numeroFila}: ${motivo}`);
                 fallidosLista.push({ ...infoPersona, motivo });
                 continue;
